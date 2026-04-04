@@ -1,1 +1,198 @@
-<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>Live Dashboard</title>\n    <link rel="stylesheet" href="styles.css">\n</head>\n<body>\n    <div id="header">\n        <h1>Live Dashboard</h1>\n    </div>\n    <div id="content">\n        <p>Current Date and Time (UTC): 2026-04-03 07:25:30</p>\n        <p>User Login: loidkaizer-design</p>\n    </div>\n    <script src="script.js"></script>\n</body>\n</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RobloxC | Live Validator Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .status-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        .success-glow { box-shadow: 0 0 15px rgba(34, 197, 94, 0.3); }
+        .error-glow { box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+    <!-- Header -->
+    <header class="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+                RobloxC Validator
+            </h1>
+            <p class="text-slate-400 text-sm mt-1">Live Backend Monitoring System</p>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="glass px-4 py-2 rounded-lg flex items-center gap-3">
+                <div class="w-3 h-3 bg-emerald-500 rounded-full status-pulse success-glow"></div>
+                <span class="text-sm font-medium">System Online</span>
+            </div>
+            <div class="glass px-4 py-2 rounded-lg">
+                <span id="server-time" class="text-xs font-mono text-slate-400 italic">--:--:--</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto space-y-6">
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="glass p-6 rounded-2xl">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-slate-400 text-sm">Total Processed</span>
+                    <i class="fas fa-list-check text-blue-400"></i>
+                </div>
+                <div id="stat-processed" class="text-3xl font-bold">0</div>
+            </div>
+            <div class="glass p-6 rounded-2xl border-l-4 border-emerald-500">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-slate-400 text-sm">Valid Accounts</span>
+                    <i class="fas fa-circle-check text-emerald-500"></i>
+                </div>
+                <div id="stat-valid" class="text-3xl font-bold text-emerald-400">0</div>
+            </div>
+            <div class="glass p-6 rounded-2xl border-l-4 border-rose-500">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-slate-400 text-sm">Invalid/Failed</span>
+                    <i class="fas fa-circle-xmark text-rose-500"></i>
+                </div>
+                <div id="stat-invalid" class="text-3xl font-bold text-rose-400">0</div>
+            </div>
+            <div class="glass p-6 rounded-2xl">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-slate-400 text-sm">Queue / Active</span>
+                    <i class="fas fa-bolt text-amber-400"></i>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span id="stat-queue" class="text-3xl font-bold">0</span>
+                    <span class="text-slate-500">/</span>
+                    <span id="stat-processing" class="text-xl text-amber-400 font-semibold">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Health & Activity -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- System Health -->
+            <div class="lg:col-span-1 space-y-6">
+                <div class="glass p-6 rounded-2xl">
+                    <h2 class="text-lg font-semibold mb-6 flex items-center gap-2">
+                        <i class="fas fa-heart-pulse text-rose-500"></i> System Health
+                    </h2>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center py-2 border-b border-slate-700">
+                            <span class="text-slate-400 text-sm">Chromium Tier</span>
+                            <span id="health-tier" class="bg-blue-500/20 text-blue-400 px-2 py-1 rounded text-xs font-mono font-bold">Tier --</span>
+                        </div>
+                        <div class="py-2 border-b border-slate-700">
+                            <span class="text-slate-400 text-sm block mb-1">Active Binary Path</span>
+                            <span id="health-path" class="text-[10px] font-mono text-slate-500 break-all leading-tight">/usr/bin/google-chrome-stable</span>
+                        </div>
+                        <div class="flex justify-between items-center py-2">
+                            <span class="text-slate-400 text-sm">System Uptime</span>
+                            <span id="health-uptime" class="text-sm font-medium">0s</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass p-6 rounded-2xl bg-gradient-to-br from-blue-500/5 to-transparent">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-circle-info text-blue-400"></i> Developer Notice
+                    </h2>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        System is currently running with a <strong>10-Tier Failover Strategy</strong>. 
+                        If Tier 1-9 fails, the system will automatically attempt an emergency launch via Tier 10.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="lg:col-span-2 glass rounded-2xl overflow-hidden">
+                <div class="p-6 border-b border-slate-700 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i class="fas fa-clock-rotate-left text-slate-400"></i> Recent Validations
+                    </h2>
+                    <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Live Stream</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wider">
+                            <tr>
+                                <th class="px-6 py-3 font-medium">Username</th>
+                                <th class="px-6 py-3 font-medium">Status</th>
+                                <th class="px-6 py-3 font-medium">Processed At</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-table-body" class="divide-y divide-slate-800">
+                            <!-- Rows injected by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        async function updateStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                document.getElementById('stat-processed').innerText = data.processed;
+                document.getElementById('stat-valid').innerText = data.valid;
+                document.getElementById('stat-invalid').innerText = data.invalid;
+                document.getElementById('stat-queue').innerText = data.queue;
+                document.getElementById('stat-processing').innerText = data.processing;
+                
+                document.getElementById('health-tier').innerText = 'Tier ' + data.system_health.tier_found;
+                document.getElementById('health-path').innerText = data.system_health.browser_path;
+                document.getElementById('health-uptime').innerText = data.uptime_human;
+                document.getElementById('server-time').innerText = new Date(data.server_time).toLocaleTimeString();
+            } catch (e) {
+                console.error('Failed to fetch stats:', e);
+            }
+        }
+
+        async function updateRecent() {
+            try {
+                const response = await fetch('/api/recent');
+                const data = await response.json();
+                const tbody = document.getElementById('recent-table-body');
+                
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="3" class="px-6 py-8 text-center text-slate-500 italic text-sm">No recent activity found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.map(item => `
+                    <tr class="hover:bg-slate-800/30 transition-colors">
+                        <td class="px-6 py-4 font-mono text-sm">${item.username || '---'}</td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                                item.status === 'valid' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                            }">
+                                ${item.status}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-xs text-slate-500">
+                            ${item.processed_at ? new Date(item.processed_at._seconds * 1000).toLocaleString() : 'Just now'}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch recent:', e);
+            }
+        }
+
+        // Initial update
+        updateStats();
+        updateRecent();
+
+        // Refresh intervals
+        setInterval(updateStats, 2000);
+        setInterval(updateRecent, 5000);
+    </script>
+</body>
+</html>
