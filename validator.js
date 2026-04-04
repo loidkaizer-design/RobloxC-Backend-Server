@@ -52,26 +52,33 @@ function getRandomProxy() {
 
 /**
  * Finds Chromium executable in various environments.
- * Render uses /usr/bin/google-chrome-stable or /usr/bin/chromium-browser.
+ * Optimized for Render build command: "npm install && npx puppeteer browsers install chrome"
  */
 function findExecutable() {
+  // 1. Check environment variable override
   if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
 
-  const paths = [
+  // 2. Check for the browser installed by 'npx puppeteer browsers install chrome'
+  // On Render, this typically goes into ~/.cache/puppeteer or project_root/.cache/puppeteer
+  const possiblePaths = [
+    // Common paths for npx puppeteer browsers install chrome
+    path.join(process.env.HOME || '/home/render', '.cache/puppeteer/chrome/linux-*/chrome-linux/chrome'),
+    path.join(process.cwd(), '.cache/puppeteer/chrome/linux-*/chrome-linux/chrome'),
+    // System fallbacks
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome',
-    '/usr/bin/chromium',
-    // Render often puts it here if using the puppeteer install script
-    path.join(process.cwd(), '.cache/puppeteer/chrome/linux-123.0.6312.86/chrome-linux/chrome'),
-    path.join(process.cwd(), 'node_modules/puppeteer/.local-chromium/linux-1022525/chrome-linux/chrome')
+    '/usr/bin/chromium'
   ];
 
-  for (const p of paths) {
-    if (fs.existsSync(p)) return p;
+  // Using glob-like matching for the wildcards in paths
+  const glob = require('glob');
+  for (const p of possiblePaths) {
+    const matches = glob.sync(p);
+    if (matches && matches.length > 0) return matches[0];
   }
   
-  // Try to use puppeteer's own discovery as a last resort
+  // 3. Last resort: Puppeteer's internal discovery
   try {
     return require('puppeteer').executablePath();
   } catch (e) {
@@ -80,7 +87,7 @@ function findExecutable() {
 }
 
 const EXECUTABLE_PATH = findExecutable();
-console.log('🔍 Using Chromium at:', EXECUTABLE_PATH || 'AUTO-DETECT');
+console.log('🚀 Final Chromium path selection:', EXECUTABLE_PATH || 'AUTO-DETECT');
 
 async function validateCredential(credential) {
   let browser = null;
