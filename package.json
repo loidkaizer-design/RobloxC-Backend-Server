@@ -1,7 +1,7 @@
 {
   "name": "roblox-validator-render",
-  "version": "1.0.3",
-  "description": "Roblox Validator Backend for Render",
+  "version": "1.0.4",
+  "description": "Ultra-Robust Roblox Validator Backend for Render",
   "main": "validator.js",
   "scripts": {
     "start": "node validator.js",

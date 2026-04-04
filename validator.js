@@ -5,6 +5,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const glob = require('glob');
 
 puppeteer.use(StealthPlugin());
 
@@ -51,43 +52,114 @@ function getRandomProxy() {
 }
 
 /**
- * Finds Chromium executable in various environments.
- * Optimized for Render build command: "npm install && npx puppeteer browsers install chrome"
+ * 🛡️ ULTRA-ROBUST 10-TIER CHROMIUM FAILOVER SYSTEM
+ * This ensures the app finds a working browser regardless of environment changes.
  */
-function findExecutable() {
-  // 1. Check environment variable override
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
-
-  // 2. Check for the browser installed by 'npx puppeteer browsers install chrome'
-  // On Render, this typically goes into ~/.cache/puppeteer or project_root/.cache/puppeteer
+function findChromiumDefinitively() {
   const possiblePaths = [
-    // Common paths for npx puppeteer browsers install chrome
+    // Tier 1: User-defined override (Highest priority)
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+
+    // Tier 2: Render specific cache path (where "npx puppeteer browsers install chrome" usually puts it)
     path.join(process.env.HOME || '/home/render', '.cache/puppeteer/chrome/linux-*/chrome-linux/chrome'),
+    
+    // Tier 3: Project-local cache (another common spot for npx puppeteer)
     path.join(process.cwd(), '.cache/puppeteer/chrome/linux-*/chrome-linux/chrome'),
-    // System fallbacks
+
+    // Tier 4: Render's native project structure (common error location)
+    '/opt/render/project/src/node_modules/puppeteer/.local-chromium/linux-*/chrome-linux/chrome',
+
+    // Tier 5: Standard system Google Chrome (Render's pre-installed stable)
     '/usr/bin/google-chrome-stable',
+
+    // Tier 6: Standard system Chromium
     '/usr/bin/chromium-browser',
+
+    // Tier 7: Common Linux generic paths
     '/usr/bin/google-chrome',
-    '/usr/bin/chromium'
+    '/usr/bin/chromium',
+
+    // Tier 8: Alternative Render environment paths
+    '/opt/render/.cache/puppeteer/chrome/linux-*/chrome-linux/chrome',
+
+    // Tier 9: Deep search in node_modules (fallback for older puppeteer versions)
+    path.join(process.cwd(), 'node_modules/puppeteer/.local-chromium/linux-*/chrome-linux/chrome'),
+
+    // Tier 10: Puppeteer's built-in discovery (Final attempt)
+    'PUPPETEER_AUTO'
   ];
 
-  // Using glob-like matching for the wildcards in paths
-  const glob = require('glob');
-  for (const p of possiblePaths) {
-    const matches = glob.sync(p);
-    if (matches && matches.length > 0) return matches[0];
+  console.log('🔍 Starting 10-Tier Chromium discovery...');
+
+  for (let i = 0; i < possiblePaths.length; i++) {
+    const p = possiblePaths[i];
+    if (!p) continue;
+
+    if (p === 'PUPPETEER_AUTO') {
+      try {
+        const autoPath = require('puppeteer').executablePath();
+        if (autoPath && fs.existsSync(autoPath)) {
+          console.log(`✅ Tier 10 (Auto-Discovery) Success: ${autoPath}`);
+          return autoPath;
+        }
+      } catch (e) {}
+      continue;
+    }
+
+    // Handle wildcard paths with glob
+    try {
+      const matches = glob.sync(p);
+      if (matches && matches.length > 0) {
+        console.log(`✅ Tier ${i + 1} Success: ${matches[0]}`);
+        return matches[0];
+      }
+    } catch (e) {
+      console.warn(`⚠️ Tier ${i + 1} check failed: ${e.message}`);
+    }
   }
-  
-  // 3. Last resort: Puppeteer's internal discovery
-  try {
-    return require('puppeteer').executablePath();
-  } catch (e) {
-    return null;
-  }
+
+  console.error('❌ ALL 10 TIERS FAILED! Puppeteer will try default launch.');
+  return null;
 }
 
-const EXECUTABLE_PATH = findExecutable();
-console.log('🚀 Final Chromium path selection:', EXECUTABLE_PATH || 'AUTO-DETECT');
+const EXECUTABLE_PATH = findChromiumDefinitively();
+
+/**
+ * 🛡️ Robust Browser Launch Wrapper
+ */
+async function launchBrowserResiliently() {
+  const baseArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--disable-extensions',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process', // Crucial for low-memory environments like Render Free Tier
+    `--proxy-server=${getRandomProxy()}`
+  ];
+
+  const launchOptions = {
+    headless: 'new',
+    args: baseArgs
+  };
+
+  if (EXECUTABLE_PATH) {
+    launchOptions.executablePath = EXECUTABLE_PATH;
+  }
+
+  try {
+    return await puppeteer.launch(launchOptions);
+  } catch (err) {
+    console.error(`⚠️ Launch with Tiered Path failed: ${err.message}. Retrying with absolute defaults...`);
+    // Final emergency fallback: launch without ANY custom options
+    return await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+  }
+}
 
 async function validateCredential(credential) {
   let browser = null;
@@ -95,28 +167,11 @@ async function validateCredential(credential) {
     stats.processing++;
     console.log(`🔍 [Queue:${stats.queue}] Validating: ${credential.username}`);
 
-    const launchOptions = {
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        `--proxy-server=${getRandomProxy()}`
-      ]
-    };
-
-    if (EXECUTABLE_PATH) {
-      launchOptions.executablePath = EXECUTABLE_PATH;
-    }
-
-    browser = await puppeteer.launch(launchOptions);
+    browser = await launchBrowserResiliently();
     activeBrowsers++;
     const page = await browser.newPage();
 
-    await page.setDefaultTimeout(20000);
-    await page.setDefaultNavigationTimeout(20000);
-
+    // Optimization: Skip unnecessary resources
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
@@ -125,6 +180,9 @@ async function validateCredential(credential) {
         req.continue();
       }
     });
+
+    await page.setDefaultTimeout(25000);
+    await page.setDefaultNavigationTimeout(25000);
 
     await page.goto(URL, { waitUntil: 'networkidle2' });
     await page.waitForSelector('#login-username', { timeout: 15000 });
