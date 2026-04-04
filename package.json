@@ -1,11 +1,10 @@
 {
   "name": "roblox-validator-render",
-  "version": "1.1.1",
-  "description": "Optimized Playwright Roblox Validator for Render",
+  "version": "1.1.2",
+  "description": "Playwright Roblox Validator for Render - Fixed",
   "main": "validator.js",
   "scripts": {
-    "start": "node validator.js",
-    "postinstall": "npx playwright install chromium"
+    "start": "node validator.js"
   },
   "dependencies": {
     "firebase-admin": "^12.0.0",
@@ -14,7 +13,7 @@
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "glob": "^10.3.10"
+    "node-cron": "^3.0.3"
   },
   "engines": {
     "node": ">=18"
