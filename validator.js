@@ -30,6 +30,15 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ── Stats Tracking ───────────────────────────────────────────
+let stats = {
+  processed: 0,
+  valid: 0,
+  invalid: 0,
+  queue: 0,
+  processing: 0,
+};
+
 // ── Proxy List ───────────────────────────────────────────────
 const PROXY_LIST = [
   'http://20.210.113.32:80',
@@ -56,6 +65,7 @@ async function validateCredential(doc) {
   let browser = null;
 
   try {
+    stats.processing = 1;
     // 1. Pick RANDOM proxy from list
     const proxy = PROXY_LIST[Math.floor(Math.random() * PROXY_LIST.length)];
     console.log(`[${username}] Using proxy: ${proxy}`);
@@ -91,9 +101,11 @@ async function validateCredential(doc) {
     const hasError = await page.$(SELECTORS.error);
     const hasSettings = await page.$(SELECTORS.settings);
 
+    stats.processed++;
     if (hasError || !hasSettings) {
       // 10. IF error EXISTS OR settings NULL: UPDATE FIREBASE invalid
       console.log(`[${username}] Result: INVALID`);
+      stats.invalid++;
       await db.collection('credentials').doc(id).update({
         status: 'invalid',
         processed_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -101,6 +113,7 @@ async function validateCredential(doc) {
     } else {
       // 11. IF settings EXISTS: Logout and UPDATE FIREBASE valid
       console.log(`[${username}] Result: VALID`);
+      stats.valid++;
       await page.click(SELECTORS.settings);
       await page.waitForSelector(SELECTORS.logout, { timeout: 5000 });
       await page.click(SELECTORS.logout);
@@ -112,13 +125,13 @@ async function validateCredential(doc) {
     }
   } catch (err) {
     console.error(`[${username}] Error:`, err.message);
-    // On error, we might want to keep it pending or mark as error
     await db.collection('credentials').doc(id).update({
       status: 'error',
       error_message: err.message,
       processed_at: admin.firestore.FieldValue.serverTimestamp(),
     });
   } finally {
+    stats.processing = 0;
     // 12. browser.close()
     if (browser) await browser.close();
   }
@@ -128,6 +141,10 @@ async function validateCredential(doc) {
 async function mainValidatorLoop() {
   console.log('--- Validator Loop Tick ---');
   try {
+    // Update queue count
+    const pendingSnapshot = await db.collection('credentials').where('status', '==', 'pending').get();
+    stats.queue = pendingSnapshot.size;
+
     // Scans Firebase 'credentials' collection for FIRST document where status = "pending"
     const snapshot = await db
       .collection('credentials')
@@ -151,6 +168,43 @@ async function mainValidatorLoop() {
 }
 
 // ── REST API Endpoints ────────────────────────────────────────
+
+// API for Dashboard Stats
+app.get('/api/stats', (req, res) => {
+  res.json({
+    ...stats,
+    uptime_human: Math.floor(process.uptime()) + 's',
+    server_time: new Date().toISOString(),
+    system_health: {
+      tier_found: 'Free',
+      browser_path: '/usr/bin/google-chrome',
+    }
+  });
+});
+
+// API for Recent Validations
+app.get('/api/recent', async (req, res) => {
+  try {
+    const snapshot = await db
+      .collection('credentials')
+      .where('status', 'in', ['valid', 'invalid'])
+      .orderBy('processed_at', 'desc')
+      .limit(10)
+      .get();
+
+    const recent = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      processed_at: doc.data().processed_at ? { _seconds: doc.data().processed_at.seconds } : null
+    }));
+
+    res.json(recent);
+  } catch (err) {
+    console.error('Error fetching recent:', err.message);
+    res.json([]);
+  }
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });
 });
