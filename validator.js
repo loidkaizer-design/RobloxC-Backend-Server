@@ -43,9 +43,9 @@ let stats = {
   uptime: Date.now(),
   system_health: {
     tier_found: 0,
-    browser_path: 'Searching for Playwright...',
+    browser_path: 'Searching for Chrome...',
     last_error: null,
-    engine: 'Playwright (Chromium)'
+    engine: 'Playwright (Chrome)'
   }
 };
 let processingQueue = [];
@@ -66,39 +66,41 @@ function getRandomProxy() {
 }
 
 /**
- * 🛡️ ULTRA-ROBUST 10-TIER PLAYWRIGHT CHROMIUM FAILOVER SYSTEM
+ * 🛡️ ULTRA-ROBUST 10-TIER CHROME FAILOVER SYSTEM
+ * Optimized for Render's non-root environment.
  */
-function findPlaywrightChromium() {
+function findChromeDefinitively() {
   const possiblePaths = [
     // Tier 1: User-defined override
     process.env.PLAYWRIGHT_EXECUTABLE_PATH,
 
-    // Tier 2: Playwright default cache on Render
+    // Tier 2: Render's pre-installed Google Chrome (Most reliable on Render)
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+
+    // Tier 3: Playwright default cache on Render
     path.join(process.env.HOME || '/home/render', '.cache/ms-playwright/chromium-*/chrome-linux/chrome'),
     
-    // Tier 3: Local project cache
+    // Tier 4: Local project cache
     path.join(process.cwd(), '.cache/ms-playwright/chromium-*/chrome-linux/chrome'),
 
-    // Tier 4: Global Playwright cache
-    '/root/.cache/ms-playwright/chromium-*/chrome-linux/chrome',
-
-    // Tier 5: Standard system Google Chrome
-    '/usr/bin/google-chrome-stable',
-
-    // Tier 6: Standard system Chromium
+    // Tier 5: System Chromium
     '/usr/bin/chromium-browser',
-
-    // Tier 7: Generic Linux Binary Paths
-    '/usr/bin/google-chrome',
     '/usr/bin/chromium',
 
-    // Tier 8: Render's shared cache
+    // Tier 6: Render's shared cache
     '/opt/render/.cache/ms-playwright/chromium-*/chrome-linux/chrome',
 
-    // Tier 9: Project node_modules (legacy/fallback)
+    // Tier 7: Project node_modules
     path.join(process.cwd(), 'node_modules/playwright-core/.local-browsers/chromium-*/chrome-linux/chrome'),
 
-    // Tier 10: Playwright Auto-Discovery (Final attempt)
+    // Tier 8: Common Linux binary paths
+    '/usr/bin/google-chrome',
+
+    // Tier 9: Puppeteer's old paths (just in case)
+    '/opt/render/project/src/node_modules/puppeteer/.local-chromium/linux-*/chrome-linux/chrome',
+
+    // Tier 10: Playwright Auto-Discovery
     'PLAYWRIGHT_AUTO'
   ];
 
@@ -109,7 +111,7 @@ function findPlaywrightChromium() {
     if (p === 'PLAYWRIGHT_AUTO') {
       stats.system_health.tier_found = 10;
       stats.system_health.browser_path = 'Playwright Default Discovery';
-      return null; // Playwright will find it automatically
+      return null;
     }
 
     try {
@@ -124,7 +126,7 @@ function findPlaywrightChromium() {
   return null;
 }
 
-const EXECUTABLE_PATH = findPlaywrightChromium();
+const EXECUTABLE_PATH = findChromeDefinitively();
 
 /**
  * 🛡️ Robust Browser Launch Wrapper for Playwright
@@ -179,7 +181,6 @@ async function validateCredential(credential) {
       page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => {})
     ]);
 
-    // Check for success: Nav-settings only appears for logged-in users
     const hasSettings = await page.$('span#nav-settings');
     const result = hasSettings ? 'valid' : 'invalid';
 

@@ -1,11 +1,11 @@
 {
   "name": "roblox-validator-render",
-  "version": "1.1.0",
-  "description": "Playwright-Powered Roblox Validator Backend for Render",
+  "version": "1.1.1",
+  "description": "Optimized Playwright Roblox Validator for Render",
   "main": "validator.js",
   "scripts": {
     "start": "node validator.js",
-    "postinstall": "npx playwright install chromium --with-deps"
+    "postinstall": "npx playwright install chromium"
   },
   "dependencies": {
     "firebase-admin": "^12.0.0",
