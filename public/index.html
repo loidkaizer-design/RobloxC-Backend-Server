@@ -31,10 +31,14 @@
             <div class="glass px-4 py-2 rounded-lg">
                 <span id="server-time" class="text-xs font-mono text-slate-400">--:--:--</span>
             </div>
+            <a href="/dashboard" class="glass px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors">
+                <i class="fas fa-lock mr-2"></i> Secure Dashboard
+            </a>
         </div>
     </header>
 
     <main class="max-w-7xl mx-auto space-y-6">
+        <!-- Statistics Grid -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="glass p-6 rounded-2xl">
                 <div class="flex items-center justify-between mb-4">
@@ -59,20 +63,19 @@
             </div>
             <div class="glass p-6 rounded-2xl">
                 <div class="flex items-center justify-between mb-4">
-                    <span class="text-slate-400 text-sm">Queue / Active</span>
+                    <span class="text-slate-400 text-sm">Pending Queue</span>
                     <i class="fas fa-bolt text-amber-400"></i>
                 </div>
                 <div class="flex items-baseline gap-2">
                     <span id="stat-queue" class="text-3xl font-bold">0</span>
-                    <span class="text-slate-500">/</span>
-                    <span id="stat-processing" class="text-xl text-amber-400 font-semibold">0</span>
+                    <span class="text-slate-500 text-sm">waiting</span>
                 </div>
             </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left Column: Pending Accounts -->
             <div class="lg:col-span-1 space-y-6">
-                <!-- Pending Accounts Section -->
                 <div class="glass p-6 rounded-2xl">
                     <h2 class="text-lg font-semibold mb-6 flex items-center gap-2">
                         <i class="fas fa-clock text-amber-400"></i> Pending Accounts
@@ -84,7 +87,7 @@
 
                 <div class="glass p-6 rounded-2xl">
                     <h2 class="text-lg font-semibold mb-6 flex items-center gap-2">
-                        <i class="fas fa-heart-pulse text-rose-500"></i> System Health
+                        <i class="fas fa-heart-pulse text-rose-500"></i> System Info
                     </h2>
                     <div class="space-y-4">
                         <div class="flex justify-between items-center py-2 border-b border-slate-700">
@@ -92,27 +95,28 @@
                             <span id="health-engine" class="text-purple-400 text-xs font-bold uppercase">Playwright</span>
                         </div>
                         <div class="flex justify-between items-center py-2 border-b border-slate-700">
-                            <span class="text-slate-400 text-sm">Chromium Tier</span>
-                            <span id="health-tier" class="bg-blue-500/20 text-blue-400 px-2 py-1 rounded text-xs font-mono font-bold">Tier --</span>
+                            <span class="text-slate-400 text-sm">Status</span>
+                            <span id="health-status" class="bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded text-xs font-bold">Operational</span>
                         </div>
-                        <div class="py-2 border-b border-slate-700">
-                            <span class="text-slate-400 text-sm block mb-1">Active Binary Path</span>
-                            <span id="health-path" class="text-[10px] font-mono text-slate-500 break-all leading-tight">Searching...</span>
+                        <div class="flex justify-between items-center py-2 border-b border-slate-700">
+                            <span class="text-slate-400 text-sm">Proxies</span>
+                            <span id="health-proxies" class="text-blue-400 text-xs font-mono font-bold">5</span>
                         </div>
                         <div class="flex justify-between items-center py-2">
-                            <span class="text-slate-400 text-sm">System Uptime</span>
+                            <span class="text-slate-400 text-sm">Uptime</span>
                             <span id="health-uptime" class="text-sm font-medium">0s</span>
                         </div>
                     </div>
                 </div>
             </div>
 
+            <!-- Right Column: Recent Validations -->
             <div class="lg:col-span-2 glass rounded-2xl overflow-hidden">
                 <div class="p-6 border-b border-slate-700 flex items-center justify-between">
                     <h2 class="text-lg font-semibold flex items-center gap-2">
                         <i class="fas fa-clock-rotate-left text-slate-400"></i> Recent Validations
                     </h2>
-                    <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Live Stream</span>
+                    <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Auto-Refresh Every 5s</span>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left">
@@ -135,7 +139,9 @@
     <script>
         function copyToClipboard(text) {
             navigator.clipboard.writeText(text).then(() => {
-                alert('Copied: ' + text);
+                alert('Copied to clipboard: ' + text);
+            }).catch(() => {
+                alert('Failed to copy');
             });
         }
 
@@ -147,12 +153,13 @@
                 document.getElementById('stat-valid').innerText = data.valid;
                 document.getElementById('stat-invalid').innerText = data.invalid;
                 document.getElementById('stat-queue').innerText = data.queue;
-                document.getElementById('stat-processing').innerText = data.processing;
-                document.getElementById('health-tier').innerText = 'Tier ' + data.system_health.tier_found;
-                document.getElementById('health-path').innerText = data.system_health.browser_path;
+                document.getElementById('health-engine').innerText = data.system_health.engine;
+                document.getElementById('health-proxies').innerText = data.system_health.proxies_available;
                 document.getElementById('health-uptime').innerText = data.uptime_human;
                 document.getElementById('server-time').innerText = new Date(data.server_time).toLocaleTimeString();
-            } catch (e) { console.error('Stats error:', e); }
+            } catch (e) { 
+                console.error('Stats error:', e); 
+            }
         }
 
         async function updatePending() {
@@ -165,17 +172,19 @@
                     return;
                 }
                 container.innerHTML = data.map(item => `
-                    <div class="bg-slate-800/40 p-3 rounded-xl border border-slate-700/50 flex items-center justify-between group">
-                        <div class="overflow-hidden">
+                    <div class="bg-slate-800/40 p-3 rounded-xl border border-slate-700/50 flex items-center justify-between group hover:bg-slate-800/60 transition-colors">
+                        <div class="overflow-hidden flex-1">
                             <p class="text-sm font-mono truncate">${item.username}</p>
                             <p class="text-[10px] text-slate-500 uppercase mt-1">Pending</p>
                         </div>
-                        <button onclick="copyToClipboard('${item.username}')" class="p-2 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white">
+                        <button onclick="copyToClipboard('${item.username}')" class="p-2 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white ml-2 flex-shrink-0" title="Copy username">
                             <i class="fas fa-copy text-xs"></i>
                         </button>
                     </div>
                 `).join('');
-            } catch (e) { console.error('Pending list error:', e); }
+            } catch (e) { 
+                console.error('Pending list error:', e); 
+            }
         }
 
         async function updateRecent() {
@@ -203,11 +212,15 @@
                         </td>
                     </tr>
                 `).join('');
-            } catch (e) { console.error('Recent error:', e); }
+            } catch (e) { 
+                console.error('Recent error:', e); 
+            }
         }
 
         // Initial calls
-        updateStats(); updatePending(); updateRecent();
+        updateStats(); 
+        updatePending(); 
+        updateRecent();
         
         // Auto-refresh every 5 seconds
         setInterval(updateStats, 5000);
