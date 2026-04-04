@@ -136,7 +136,7 @@ async function mainValidatorLoop() {
       .get();
 
     if (snapshot.empty) {
-      console.log('No pending documents found. Waiting 30s...');
+      console.log('No pending documents found. Waiting 10s...');
     } else {
       const doc = snapshot.docs[0];
       console.log(`Found pending document: ${doc.id} (${doc.data().username})`);
@@ -146,8 +146,8 @@ async function mainValidatorLoop() {
     console.error('Error in validator loop:', err.message);
   }
 
-  // Repeat every 30 seconds
-  setTimeout(mainValidatorLoop, 30000);
+  // Repeat every 10 seconds
+  setTimeout(mainValidatorLoop, 10000);
 }
 
 // ── REST API Endpoints ────────────────────────────────────────
@@ -162,7 +162,7 @@ app.get('*', (req, res) => {
 // ── Start Server ─────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔄 Main Validator Loop started (30s interval)`);
+  console.log(`🔄 Main Validator Loop started (10s interval)`);
   
   // Start the loop
   mainValidatorLoop();
