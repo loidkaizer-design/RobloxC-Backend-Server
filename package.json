@@ -1,6 +1,8 @@
 {
   "name": "roblox-validator-render",
-  "version": "1.0.0",
+  "version": "1.0.1",
+  "description": "Roblox Validator Backend for Render",
+  "main": "validator.js",
   "scripts": {
     "start": "node validator.js",
     "postinstall": "npx puppeteer browsers install chrome"
@@ -11,8 +13,7 @@
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "glob": "^9.4.0"
+    "cors": "^2.8.5"
   },
   "engines": {
     "node": ">=18"
