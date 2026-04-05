@@ -30,13 +30,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ── Health Check (for keep-alive ping) ───────────────────────
+// ── Health Check ─────────────────────────────────────────────
 app.get("/health", (req, res) => res.json({ status: "ok", uptime: process.uptime() }));
 
-// ── Helper: fetch by status ───────────────────────────────────
+// ── Helper ───────────────────────────────────────────────────
 async function fetchByStatus(status) {
-  // orderBy added_at requires a Firestore composite index:
-  // Collection: credentials | Fields: status ASC, added_at DESC
   const snapshot = await db.collection("credentials")
     .where("status", "==", status)
     .orderBy("added_at", "desc")
@@ -44,9 +42,7 @@ async function fetchByStatus(status) {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
-// ── API Endpoints ────────────────────────────────────────────
-
-// Stats summary
+// ── Stats ────────────────────────────────────────────────────
 app.get("/api/stats", async (req, res) => {
   try {
     const [allSnap, validSnap, invalidSnap, pendingSnap] = await Promise.all([
@@ -56,8 +52,8 @@ app.get("/api/stats", async (req, res) => {
       db.collection("credentials").where("status", "==", "pending").get(),
     ]);
     res.json({
-      total: allSnap.size,
-      valid: validSnap.size,
+      total:   allSnap.size,
+      valid:   validSnap.size,
       invalid: invalidSnap.size,
       pending: pendingSnap.size,
     });
@@ -67,7 +63,7 @@ app.get("/api/stats", async (req, res) => {
   }
 });
 
-// Get Pending accounts
+// ── Get Pending ───────────────────────────────────────────────
 app.get("/api/accounts/pending", async (req, res) => {
   try {
     res.json(await fetchByStatus("pending"));
@@ -77,7 +73,7 @@ app.get("/api/accounts/pending", async (req, res) => {
   }
 });
 
-// Get All accounts
+// ── Get All ───────────────────────────────────────────────────
 app.get("/api/accounts/all", async (req, res) => {
   try {
     const snapshot = await db.collection("credentials")
@@ -90,7 +86,7 @@ app.get("/api/accounts/all", async (req, res) => {
   }
 });
 
-// Get Valid accounts
+// ── Get Valid ─────────────────────────────────────────────────
 app.get("/api/accounts/valid", async (req, res) => {
   try {
     res.json(await fetchByStatus("valid"));
@@ -100,7 +96,7 @@ app.get("/api/accounts/valid", async (req, res) => {
   }
 });
 
-// Get Invalid accounts
+// ── Get Invalid ───────────────────────────────────────────────
 app.get("/api/accounts/invalid", async (req, res) => {
   try {
     res.json(await fetchByStatus("invalid"));
@@ -110,7 +106,7 @@ app.get("/api/accounts/invalid", async (req, res) => {
   }
 });
 
-// Update account status
+// ── Update Status ─────────────────────────────────────────────
 app.post("/api/accounts/status", async (req, res) => {
   const { ids, status } = req.body;
   const allowed = ["pending", "valid", "invalid", "error"];
@@ -140,14 +136,29 @@ app.post("/api/accounts/status", async (req, res) => {
   }
 });
 
-// Admin heartbeat
+// ── Delete Account ────────────────────────────────────────────
+app.delete("/api/accounts/:id", async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: "Missing account ID" });
+
+  try {
+    await db.collection("credentials").doc(id).delete();
+    console.log(`🗑️  Deleted account: ${id}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error deleting account:", err.message);
+    res.status(500).json({ error: "Failed to delete account", detail: err.message });
+  }
+});
+
+// ── Admin Heartbeat ───────────────────────────────────────────
 app.post("/api/admin/heartbeat", (req, res) => {
   res.json({ activeAdmins: 1 });
 });
 
-// ── Routes ───────────────────────────────────────────────────
+// ── Routes ────────────────────────────────────────────────────
 app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.get("*",          (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
 app.listen(PORT, () => {
   console.log(`🚀 RobloxC Dashboard live on port ${PORT}`);
