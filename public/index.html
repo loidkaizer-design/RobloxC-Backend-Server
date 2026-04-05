@@ -3,229 +3,374 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RobloxC | Playwright Dashboard</title>
+    <title>RobloxC | Admin Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .status-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-        .success-glow { box-shadow: 0 0 15px rgba(34, 197, 94, 0.3); }
+        body { font-family: 'Inter', sans-serif; background-color: #000000; color: #ffffff; }
+        .bg-card { background-color: #1a1a1a; }
+        .border-subtle { border-color: #333333; }
+        .text-muted { color: #888888; }
+        
+        /* Passcode Gate Style */
+        #passcode-gate { background-color: #000000; z-index: 9999; }
+        .passcode-input { background: transparent; border-bottom: 2px solid #333; font-size: 2rem; width: 200px; text-align: center; letter-spacing: 0.5rem; outline: none; }
+        .passcode-input:focus { border-bottom-color: #fff; }
+
+        /* Slider Panel Style */
+        #slider-panel { position: fixed; top: 0; right: -100%; width: 100%; height: 100%; background: #000; z-index: 1000; transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        #slider-panel.open { right: 0; }
+        @media (min-width: 768px) { #slider-panel { width: 400px; } }
+        
+        .slide-container { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; height: calc(100% - 60px); }
+        .slide { min-width: 100%; scroll-snap-align: start; padding: 20px; overflow-y: auto; }
+        .slide::-webkit-scrollbar { display: none; }
+        
+        .account-item { border-bottom: 1px solid #222; padding: 12px 0; }
+        .account-item:last-child { border-bottom: none; }
+        
+        /* Custom Checkbox */
+        .custom-checkbox { width: 18px; height: 18px; border: 2px solid #444; border-radius: 4px; display: inline-block; cursor: pointer; position: relative; }
+        .custom-checkbox.checked { background-color: #fff; border-color: #fff; }
+        .custom-checkbox.checked::after { content: '\2713'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #000; font-size: 12px; }
+
+        /* Confirmation Modal */
+        #confirm-modal { z-index: 2000; }
+        
+        /* Utility */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
-<body class="min-h-screen p-4 md:p-8">
-    <header class="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-            <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                RobloxC Validator
-            </h1>
-            <p class="text-slate-400 text-sm mt-1">Playwright Engine | Live Monitoring</p>
-        </div>
-        <div class="flex items-center gap-4">
-            <div class="glass px-4 py-2 rounded-lg flex items-center gap-3">
-                <div class="w-3 h-3 bg-emerald-500 rounded-full status-pulse success-glow"></div>
-                <span class="text-sm font-medium">System Online</span>
-            </div>
-            <div class="glass px-4 py-2 rounded-lg">
-                <span id="server-time" class="text-xs font-mono text-slate-400">--:--:--</span>
-            </div>
-            <a href="/dashboard" class="glass px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors">
-                <i class="fas fa-lock mr-2"></i> Secure Dashboard
-            </a>
-        </div>
-    </header>
+<body class="min-h-screen">
 
-    <main class="max-w-7xl mx-auto space-y-6">
-        <!-- Statistics Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="glass p-6 rounded-2xl">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-slate-400 text-sm">Total Processed</span>
-                    <i class="fas fa-list-check text-blue-400"></i>
-                </div>
-                <div id="stat-processed" class="text-3xl font-bold">0</div>
-            </div>
-            <div class="glass p-6 rounded-2xl border-l-4 border-emerald-500">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-slate-400 text-sm">Valid Accounts</span>
-                    <i class="fas fa-circle-check text-emerald-500"></i>
-                </div>
-                <div id="stat-valid" class="text-3xl font-bold text-emerald-400">0</div>
-            </div>
-            <div class="glass p-6 rounded-2xl border-l-4 border-rose-500">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-slate-400 text-sm">Invalid/Failed</span>
-                    <i class="fas fa-circle-xmark text-rose-500"></i>
-                </div>
-                <div id="stat-invalid" class="text-3xl font-bold text-rose-400">0</div>
-            </div>
-            <div class="glass p-6 rounded-2xl">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-slate-400 text-sm">Pending Queue</span>
-                    <i class="fas fa-bolt text-amber-400"></i>
-                </div>
-                <div class="flex items-baseline gap-2">
-                    <span id="stat-queue" class="text-3xl font-bold">0</span>
-                    <span class="text-slate-500 text-sm">waiting</span>
-                </div>
-            </div>
+    <!-- PASSCODE GATE -->
+    <div id="passcode-gate" class="fixed inset-0 flex flex-col items-center justify-center">
+        <div class="mb-8 text-center">
+            <h1 class="text-xl font-bold mb-2">ACCESS REQUIRED</h1>
+            <p class="text-muted text-sm">Enter passcode to continue</p>
         </div>
+        <input type="password" id="passcode-field" class="passcode-input mb-4" maxlength="6" autofocus>
+        <p id="passcode-error" class="text-red-500 text-xs opacity-0">Invalid Passcode</p>
+    </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Left Column: Pending Accounts -->
-            <div class="lg:col-span-1 space-y-6">
-                <div class="glass p-6 rounded-2xl">
-                    <h2 class="text-lg font-semibold mb-6 flex items-center gap-2">
-                        <i class="fas fa-clock text-amber-400"></i> Pending Accounts
-                    </h2>
-                    <div id="pending-list" class="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-                        <p class="text-slate-500 italic text-sm">Loading queue...</p>
-                    </div>
+    <!-- MAIN DASHBOARD -->
+    <div id="main-content" class="hidden flex flex-col min-h-screen">
+        <!-- Header -->
+        <header class="p-6 border-b border-subtle flex items-center justify-between">
+            <div>
+                <h1 class="text-lg font-bold">ROBLOXC ADMIN</h1>
+                <div class="flex items-center gap-2 mt-1">
+                    <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                    <span id="active-admins" class="text-xs text-muted">1 Admin Active</span>
                 </div>
+            </div>
+            <button id="open-slider" class="w-10 h-10 flex items-center justify-center rounded-full border border-subtle hover:bg-white hover:text-black transition-all">
+                <i class="fas fa-chevron-right"></i>
+            </button>
+        </header>
 
-                <div class="glass p-6 rounded-2xl">
-                    <h2 class="text-lg font-semibold mb-6 flex items-center gap-2">
-                        <i class="fas fa-heart-pulse text-rose-500"></i> System Info
-                    </h2>
-                    <div class="space-y-4">
-                        <div class="flex justify-between items-center py-2 border-b border-slate-700">
-                            <span class="text-slate-400 text-sm">Engine</span>
-                            <span id="health-engine" class="text-purple-400 text-xs font-bold uppercase">Playwright</span>
-                        </div>
-                        <div class="flex justify-between items-center py-2 border-b border-slate-700">
-                            <span class="text-slate-400 text-sm">Status</span>
-                            <span id="health-status" class="bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded text-xs font-bold">Operational</span>
-                        </div>
-                        <div class="flex justify-between items-center py-2 border-b border-slate-700">
-                            <span class="text-slate-400 text-sm">Proxies</span>
-                            <span id="health-proxies" class="text-blue-400 text-xs font-mono font-bold">5</span>
-                        </div>
-                        <div class="flex justify-between items-center py-2">
-                            <span class="text-slate-400 text-sm">Uptime</span>
-                            <span id="health-uptime" class="text-sm font-medium">0s</span>
+        <!-- Content -->
+        <main class="flex-1 p-6 max-w-4xl mx-auto w-full">
+            <h2 class="text-sm font-semibold text-muted uppercase tracking-widest mb-6">Pending Accounts</h2>
+            
+            <div id="pending-container" class="space-y-4">
+                <!-- Accounts will be loaded here -->
+                <div class="animate-pulse flex space-x-4">
+                    <div class="flex-1 space-y-4 py-1">
+                        <div class="h-4 bg-zinc-800 rounded w-3/4"></div>
+                        <div class="space-y-2">
+                            <div class="h-4 bg-zinc-800 rounded"></div>
+                            <div class="h-4 bg-zinc-800 rounded w-5/6"></div>
                         </div>
                     </div>
                 </div>
             </div>
+        </main>
+    </div>
 
-            <!-- Right Column: Recent Validations -->
-            <div class="lg:col-span-2 glass rounded-2xl overflow-hidden">
-                <div class="p-6 border-b border-slate-700 flex items-center justify-between">
-                    <h2 class="text-lg font-semibold flex items-center gap-2">
-                        <i class="fas fa-clock-rotate-left text-slate-400"></i> Recent Validations
-                    </h2>
-                    <span class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Auto-Refresh Every 5s</span>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead class="bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wider">
-                            <tr>
-                                <th class="px-6 py-3 font-medium">Username</th>
-                                <th class="px-6 py-3 font-medium">Status</th>
-                                <th class="px-6 py-3 font-medium">Processed At</th>
-                            </tr>
-                        </thead>
-                        <tbody id="recent-table-body" class="divide-y divide-slate-800">
-                            <tr><td colspan="3" class="px-6 py-8 text-center text-slate-500 italic text-sm">Loading activity...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+    <!-- SLIDER PANEL -->
+    <div id="slider-panel">
+        <div class="flex items-center justify-between p-4 border-b border-subtle">
+            <div class="flex gap-4 text-xs font-bold">
+                <button onclick="scrollToSlide(0)" class="slide-tab opacity-100">ALL</button>
+                <button onclick="scrollToSlide(1)" class="slide-tab opacity-50">VALID</button>
+                <button onclick="scrollToSlide(2)" class="slide-tab opacity-50">INVALID</button>
+            </div>
+            <div class="flex items-center gap-3">
+                <button id="bulk-menu-btn" class="text-muted hover:text-white"><i class="fas fa-ellipsis-v"></i></button>
+                <button id="close-slider" class="text-muted hover:text-white"><i class="fas fa-times"></i></button>
             </div>
         </div>
-    </main>
+
+        <!-- Bulk Action Menu -->
+        <div id="bulk-menu" class="hidden absolute top-14 right-10 bg-zinc-900 border border-subtle p-2 rounded shadow-xl z-50">
+            <button onclick="bulkUpdate('valid')" class="block w-full text-left px-4 py-2 text-xs hover:bg-zinc-800">Set as Valid</button>
+            <button onclick="bulkUpdate('invalid')" class="block w-full text-left px-4 py-2 text-xs hover:bg-zinc-800">Set as Invalid</button>
+        </div>
+
+        <div class="slide-container no-scrollbar" id="slide-container">
+            <!-- Slide 1: All -->
+            <div class="slide" id="slide-all">
+                <div class="space-y-2" id="list-all"></div>
+            </div>
+            <!-- Slide 2: Valid -->
+            <div class="slide" id="slide-valid">
+                <div class="space-y-2" id="list-valid"></div>
+            </div>
+            <!-- Slide 3: Invalid -->
+            <div class="slide" id="slide-invalid">
+                <div class="space-y-2" id="list-invalid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONFIRMATION MODAL -->
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center p-6">
+        <div class="bg-card border border-subtle p-8 rounded-lg max-w-sm w-full text-center">
+            <h3 class="text-lg font-bold mb-4">Are you sure?</h3>
+            <div class="flex gap-4">
+                <button id="confirm-yes" class="flex-1 bg-white text-black font-bold py-3 rounded">YES</button>
+                <button id="confirm-no" class="flex-1 border border-subtle font-bold py-3 rounded">NO</button>
+            </div>
+        </div>
+    </div>
 
     <script>
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                alert('Copied to clipboard: ' + text);
-            }).catch(() => {
-                alert('Failed to copy');
-            });
+        // State
+        const CORRECT_PASSCODE = "110312";
+        let pendingAccounts = [];
+        let selectedIds = new Set();
+        let currentConfirmAction = null;
+
+        // Elements
+        const passcodeGate = document.getElementById('passcode-gate');
+        const passcodeField = document.getElementById('passcode-field');
+        const passcodeError = document.getElementById('passcode-error');
+        const mainContent = document.getElementById('main-content');
+        const pendingContainer = document.getElementById('pending-container');
+        const sliderPanel = document.getElementById('slider-panel');
+        const slideContainer = document.getElementById('slide-container');
+        const bulkMenu = document.getElementById('bulk-menu');
+        const confirmModal = document.getElementById('confirm-modal');
+
+        // Passcode Logic
+        passcodeField.addEventListener('input', (e) => {
+            if (e.target.value.length === 6) {
+                if (e.target.value === CORRECT_PASSCODE) {
+                    passcodeGate.classList.add('hidden');
+                    mainContent.classList.remove('hidden');
+                    initDashboard();
+                } else {
+                    passcodeError.style.opacity = '1';
+                    e.target.value = '';
+                }
+            } else {
+                passcodeError.style.opacity = '0';
+            }
+        });
+
+        // Dashboard Initialization
+        function initDashboard() {
+            loadPending();
+            setInterval(loadPending, 5000);
+            setInterval(updatePresence, 10000);
+            updatePresence();
         }
 
-        async function updateStats() {
+        async function updatePresence() {
             try {
-                const response = await fetch('/api/stats');
-                const data = await response.json();
-                document.getElementById('stat-processed').innerText = data.processed;
-                document.getElementById('stat-valid').innerText = data.valid;
-                document.getElementById('stat-invalid').innerText = data.invalid;
-                document.getElementById('stat-queue').innerText = data.queue;
-                document.getElementById('health-engine').innerText = data.system_health.engine;
-                document.getElementById('health-proxies').innerText = data.system_health.proxies_available;
-                document.getElementById('health-uptime').innerText = data.uptime_human;
-                document.getElementById('server-time').innerText = new Date(data.server_time).toLocaleTimeString();
-            } catch (e) { 
-                console.error('Stats error:', e); 
+                const res = await fetch('/api/admin/heartbeat', { method: 'POST' });
+                const data = await res.json();
+                document.getElementById('active-admins').innerText = `${data.activeAdmins} Admin${data.activeAdmins > 1 ? 's' : ''} Active`;
+            } catch (e) {}
+        }
+
+        async function loadPending() {
+            try {
+                const res = await fetch('/api/accounts/pending');
+                pendingAccounts = await res.json();
+                renderPending();
+            } catch (e) {
+                console.error(e);
             }
         }
 
-        async function updatePending() {
-            try {
-                const response = await fetch('/api/pending_list');
-                const data = await response.json();
-                const container = document.getElementById('pending-list');
-                if (data.length === 0) {
-                    container.innerHTML = '<p class="text-slate-500 italic text-sm">Queue is empty</p>';
-                    return;
-                }
-                container.innerHTML = data.map(item => `
-                    <div class="bg-slate-800/40 p-3 rounded-xl border border-slate-700/50 flex items-center justify-between group hover:bg-slate-800/60 transition-colors">
-                        <div class="overflow-hidden flex-1">
-                            <p class="text-sm font-mono truncate">${item.username}</p>
-                            <p class="text-[10px] text-slate-500 uppercase mt-1">Pending</p>
+        function renderPending() {
+            if (pendingAccounts.length === 0) {
+                pendingContainer.innerHTML = '<p class="text-muted italic text-sm">No pending accounts found.</p>';
+                return;
+            }
+
+            pendingContainer.innerHTML = pendingAccounts.map(acc => `
+                <div class="bg-card border border-subtle rounded-lg p-4 transition-all" id="acc-${acc.id}">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="font-mono text-sm">${acc.username}</p>
+                            <p class="text-[10px] text-muted mt-1 uppercase">Pending Validation</p>
                         </div>
-                        <button onclick="copyToClipboard('${item.username}')" class="p-2 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white ml-2 flex-shrink-0" title="Copy username">
-                            <i class="fas fa-copy text-xs"></i>
+                        <button onclick="processAccount('${acc.id}')" class="px-6 py-2 bg-white text-black text-xs font-bold rounded hover:bg-zinc-200 transition-colors">
+                            PROCESS
                         </button>
                     </div>
-                `).join('');
-            } catch (e) { 
-                console.error('Pending list error:', e); 
-            }
+                    <div id="detail-${acc.id}" class="hidden mt-4 pt-4 border-t border-subtle">
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <p class="text-[10px] text-muted uppercase">Username</p>
+                                <p class="text-sm font-mono">${acc.username}</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-muted uppercase">Password</p>
+                                <p class="text-sm font-mono">${acc.password}</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="confirmStatus('${acc.id}', 'valid')" class="flex-1 py-2 border border-green-900/50 text-green-500 text-[10px] font-bold rounded hover:bg-green-500 hover:text-black transition-all">VALID</button>
+                            <button onclick="confirmStatus('${acc.id}', 'invalid')" class="flex-1 py-2 border border-red-900/50 text-red-500 text-[10px] font-bold rounded hover:bg-red-500 hover:text-black transition-all">INVALID</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
         }
 
-        async function updateRecent() {
+        window.processAccount = function(id) {
+            const acc = pendingAccounts.find(a => a.id === id);
+            if (!acc) return;
+
+            // Copy to clipboard
+            const textToCopy = `Username: ${acc.username}\nPassword: ${acc.password}`;
+            navigator.clipboard.writeText(textToCopy);
+
+            // Open Roblox
+            window.open('https://www.roblox.com/login', '_blank');
+
+            // Show details
+            document.getElementById(`detail-${id}`).classList.remove('hidden');
+            const btn = document.querySelector(`#acc-${id} button`);
+            if (btn) btn.innerText = 'CONFIGURING...';
+        };
+
+        window.confirmStatus = function(id, status) {
+            currentConfirmAction = () => updateStatus(id, status);
+            confirmModal.classList.remove('hidden');
+        };
+
+        async function updateStatus(id, status) {
             try {
-                const response = await fetch('/api/recent');
-                const data = await response.json();
-                const tbody = document.getElementById('recent-table-body');
-                if (data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="3" class="px-6 py-8 text-center text-slate-500 italic text-sm">No recent activity found</td></tr>';
-                    return;
+                const res = await fetch('/api/accounts/status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: [id], status })
+                });
+                if (res.ok) {
+                    loadPending();
+                    if (sliderPanel.classList.contains('open')) loadSliderData();
                 }
-                tbody.innerHTML = data.map(item => `
-                    <tr class="hover:bg-slate-800/30 transition-colors">
-                        <td class="px-6 py-4 font-mono text-sm">${item.username || '---'}</td>
-                        <td class="px-6 py-4">
-                            <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                                item.status === 'valid' ? 'bg-emerald-500/20 text-emerald-400' : 
-                                item.status === 'invalid' ? 'bg-rose-500/20 text-rose-400' : 'bg-amber-500/20 text-amber-400'
-                            }">
-                                ${item.status}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-xs text-slate-500">
-                            ${item.processed_at ? new Date(item.processed_at._seconds * 1000).toLocaleString() : 'Just now'}
-                        </td>
-                    </tr>
-                `).join('');
-            } catch (e) { 
-                console.error('Recent error:', e); 
-            }
+            } catch (e) {}
         }
 
-        // Initial calls
-        updateStats(); 
-        updatePending(); 
-        updateRecent();
-        
-        // Auto-refresh every 5 seconds
-        setInterval(updateStats, 5000);
-        setInterval(updatePending, 5000);
-        setInterval(updateRecent, 5000);
+        // Slider Logic
+        document.getElementById('open-slider').onclick = () => {
+            sliderPanel.classList.add('open');
+            loadSliderData();
+        };
+
+        document.getElementById('close-slider').onclick = () => {
+            sliderPanel.classList.remove('open');
+            bulkMenu.classList.add('hidden');
+        };
+
+        document.getElementById('bulk-menu-btn').onclick = () => {
+            bulkMenu.classList.toggle('hidden');
+        };
+
+        async function loadSliderData() {
+            const [all, valid, invalid] = await Promise.all([
+                fetch('/api/accounts/all').then(r => r.json()),
+                fetch('/api/accounts/valid').then(r => r.json()),
+                fetch('/api/accounts/invalid').then(r => r.json())
+            ]);
+
+            renderList('list-all', all);
+            renderList('list-valid', valid);
+            renderList('list-invalid', invalid);
+        }
+
+        function renderList(containerId, accounts) {
+            const container = document.getElementById(containerId);
+            if (accounts.length === 0) {
+                container.innerHTML = '<p class="text-muted text-xs italic">Empty</p>';
+                return;
+            }
+
+            container.innerHTML = accounts.map(acc => `
+                <div class="account-item flex items-center gap-3">
+                    <div class="custom-checkbox ${selectedIds.has(acc.id) ? 'checked' : ''}" onclick="toggleSelect('${acc.id}', this)"></div>
+                    <div class="flex-1 overflow-hidden">
+                        <p class="text-xs font-mono truncate">${acc.username}</p>
+                        <p class="text-[8px] text-muted uppercase">${acc.status} • ${new Date(acc.added_at?._seconds * 1000 || Date.now()).toLocaleDateString()}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        window.toggleSelect = function(id, el) {
+            if (selectedIds.has(id)) {
+                selectedIds.delete(id);
+                el.classList.remove('checked');
+            } else {
+                selectedIds.add(id);
+                el.classList.add('checked');
+            }
+        };
+
+        window.bulkUpdate = function(status) {
+            if (selectedIds.size === 0) return;
+            currentConfirmAction = async () => {
+                try {
+                    await fetch('/api/accounts/status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: Array.from(selectedIds), status })
+                    });
+                    selectedIds.clear();
+                    bulkMenu.classList.add('hidden');
+                    loadSliderData();
+                    loadPending();
+                } catch (e) {}
+            };
+            confirmModal.classList.remove('hidden');
+        };
+
+        window.scrollToSlide = (index) => {
+            const width = slideContainer.offsetWidth;
+            slideContainer.scrollTo({ left: width * index, behavior: 'smooth' });
+            
+            // Update tabs
+            document.querySelectorAll('.slide-tab').forEach((tab, i) => {
+                tab.style.opacity = i === index ? '1' : '0.5';
+            });
+        };
+
+        // Confirmation Modal Logic
+        document.getElementById('confirm-yes').onclick = async () => {
+            if (currentConfirmAction) await currentConfirmAction();
+            confirmModal.classList.add('hidden');
+            currentConfirmAction = null;
+        };
+
+        document.getElementById('confirm-no').onclick = () => {
+            confirmModal.classList.add('hidden');
+            currentConfirmAction = null;
+        };
+
+        // Handle horizontal scroll to update tabs
+        slideContainer.addEventListener('scroll', () => {
+            const index = Math.round(slideContainer.scrollLeft / slideContainer.offsetWidth);
+            document.querySelectorAll('.slide-tab').forEach((tab, i) => {
+                tab.style.opacity = i === index ? '1' : '0.5';
+            });
+        });
     </script>
 </body>
 </html>
