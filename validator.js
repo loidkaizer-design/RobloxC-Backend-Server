@@ -14,8 +14,9 @@ try {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
   });
+  console.log("✅ Firebase initialized successfully");
 } catch (err) {
-  console.error("Firebase Init Failed:", err.message);
+  console.error("❌ Firebase Init Failed:", err.message);
   process.exit(1);
 }
 
@@ -29,112 +30,119 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ── Admin Counter (Simple in-memory for live session) ────────
-let activeAdmins = 0;
+// ── Health Check (for keep-alive ping) ───────────────────────
+app.get("/health", (req, res) => res.json({ status: "ok", uptime: process.uptime() }));
+
+// ── Helper: fetch by status ───────────────────────────────────
+async function fetchByStatus(status) {
+  // orderBy added_at requires a Firestore composite index:
+  // Collection: credentials | Fields: status ASC, added_at DESC
+  const snapshot = await db.collection("credentials")
+    .where("status", "==", status)
+    .orderBy("added_at", "desc")
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
 
 // ── API Endpoints ────────────────────────────────────────────
 
-// Get all accounts with Pending status
-app.get("/api/accounts/pending", async (req, res) => {
+// Stats summary
+app.get("/api/stats", async (req, res) => {
   try {
-    const snapshot = await db.collection("credentials")
-      .where("status", "==", "pending")
-      .orderBy("added_at", "desc")
-      .get();
-    
-    const accounts = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    res.json(accounts);
+    const [allSnap, validSnap, invalidSnap, pendingSnap] = await Promise.all([
+      db.collection("credentials").get(),
+      db.collection("credentials").where("status", "==", "valid").get(),
+      db.collection("credentials").where("status", "==", "invalid").get(),
+      db.collection("credentials").where("status", "==", "pending").get(),
+    ]);
+    res.json({
+      total: allSnap.size,
+      valid: validSnap.size,
+      invalid: invalidSnap.size,
+      pending: pendingSnap.size,
+    });
   } catch (err) {
-    console.error("Error fetching pending accounts:", err);
-    res.status(500).json({ error: "Failed to fetch pending accounts" });
+    console.error("Error fetching stats:", err.message);
+    res.status(500).json({ error: "Failed to fetch stats", detail: err.message });
   }
 });
 
-// Get all accounts (Slide 1)
+// Get Pending accounts
+app.get("/api/accounts/pending", async (req, res) => {
+  try {
+    res.json(await fetchByStatus("pending"));
+  } catch (err) {
+    console.error("Error fetching pending:", err.message);
+    res.status(500).json({ error: "Failed to fetch pending accounts", detail: err.message });
+  }
+});
+
+// Get All accounts
 app.get("/api/accounts/all", async (req, res) => {
   try {
     const snapshot = await db.collection("credentials")
       .orderBy("added_at", "desc")
       .get();
-    
-    const accounts = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    res.json(accounts);
+    res.json(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch all accounts" });
+    console.error("Error fetching all:", err.message);
+    res.status(500).json({ error: "Failed to fetch all accounts", detail: err.message });
   }
 });
 
-// Get Valid accounts (Slide 2)
+// Get Valid accounts
 app.get("/api/accounts/valid", async (req, res) => {
   try {
-    const snapshot = await db.collection("credentials")
-      .where("status", "==", "valid")
-      .orderBy("added_at", "desc")
-      .get();
-    
-    const accounts = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    res.json(accounts);
+    res.json(await fetchByStatus("valid"));
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch valid accounts" });
+    console.error("Error fetching valid:", err.message);
+    res.status(500).json({ error: "Failed to fetch valid accounts", detail: err.message });
   }
 });
 
-// Get Invalid accounts (Slide 3)
+// Get Invalid accounts
 app.get("/api/accounts/invalid", async (req, res) => {
   try {
-    const snapshot = await db.collection("credentials")
-      .where("status", "==", "invalid")
-      .orderBy("added_at", "desc")
-      .get();
-    
-    const accounts = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    res.json(accounts);
+    res.json(await fetchByStatus("invalid"));
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch invalid accounts" });
+    console.error("Error fetching invalid:", err.message);
+    res.status(500).json({ error: "Failed to fetch invalid accounts", detail: err.message });
   }
 });
 
 // Update account status
 app.post("/api/accounts/status", async (req, res) => {
   const { ids, status } = req.body;
-  if (!ids || !Array.isArray(ids) || !status) {
+  const allowed = ["pending", "valid", "invalid", "error"];
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0 || !status) {
     return res.status(400).json({ error: "Invalid request body" });
+  }
+  if (!allowed.includes(status.toLowerCase())) {
+    return res.status(400).json({ error: `Status must be one of: ${allowed.join(", ")}` });
   }
 
   try {
     const batch = db.batch();
     ids.forEach(id => {
       const ref = db.collection("credentials").doc(id);
-      batch.update(ref, { 
+      batch.update(ref, {
         status: status.toLowerCase(),
         processed_at: admin.firestore.FieldValue.serverTimestamp()
       });
     });
     await batch.commit();
-    res.json({ success: true });
+    console.log(`✅ Updated ${ids.length} account(s) to "${status}"`);
+    res.json({ success: true, updated: ids.length });
   } catch (err) {
-    console.error("Error updating status:", err);
-    res.status(500).json({ error: "Failed to update status" });
+    console.error("Error updating status:", err.message);
+    res.status(500).json({ error: "Failed to update status", detail: err.message });
   }
 });
 
-// Admin Presence (Polling based)
+// Admin heartbeat
 app.post("/api/admin/heartbeat", (req, res) => {
-  // In a real app, we'd use WebSockets or a TTL-based store like Redis
-  // For this implementation, we'll just return a mock or simple counter
-  res.json({ activeAdmins: activeAdmins || 1 });
+  res.json({ activeAdmins: 1 });
 });
 
 // ── Routes ───────────────────────────────────────────────────
@@ -142,5 +150,5 @@ app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "public", 
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
 app.listen(PORT, () => {
-  console.log(`🚀 RobloxC Dashboard Live on Port ${PORT}`);
+  console.log(`🚀 RobloxC Dashboard live on port ${PORT}`);
 });
