@@ -12,37 +12,65 @@
         .bg-card { background-color: #1a1a1a; }
         .border-subtle { border-color: #333333; }
         .text-muted { color: #888888; }
-        
-        /* Passcode Gate Style */
+
+        /* Passcode Gate */
         #passcode-gate { background-color: #000000; z-index: 9999; }
-        .passcode-input { background: transparent; border-bottom: 2px solid #333; font-size: 2rem; width: 200px; text-align: center; letter-spacing: 0.5rem; outline: none; }
+        .passcode-input { background: transparent; border-bottom: 2px solid #333; font-size: 2rem; width: 200px; text-align: center; letter-spacing: 0.5rem; outline: none; color: white; }
         .passcode-input:focus { border-bottom-color: #fff; }
 
-        /* Slider Panel Style */
+        /* Slider Panel */
         #slider-panel { position: fixed; top: 0; right: -100%; width: 100%; height: 100%; background: #000; z-index: 1000; transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         #slider-panel.open { right: 0; }
-        @media (min-width: 768px) { #slider-panel { width: 400px; } }
-        
-        .slide-container { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; height: calc(100% - 60px); }
-        .slide { min-width: 100%; scroll-snap-align: start; padding: 20px; overflow-y: auto; }
+        @media (min-width: 768px) { #slider-panel { width: 420px; } }
+
+        .slide-container { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; height: calc(100% - 115px); }
+        .slide { min-width: 100%; scroll-snap-align: start; padding: 16px; overflow-y: auto; }
         .slide::-webkit-scrollbar { display: none; }
-        
+
         .account-item { border-bottom: 1px solid #222; padding: 12px 0; }
         .account-item:last-child { border-bottom: none; }
-        
+
         /* Custom Checkbox */
-        .custom-checkbox { width: 18px; height: 18px; border: 2px solid #444; border-radius: 4px; display: inline-block; cursor: pointer; position: relative; }
+        .custom-checkbox { width: 18px; height: 18px; border: 2px solid #444; border-radius: 4px; display: inline-block; cursor: pointer; position: relative; flex-shrink: 0; }
         .custom-checkbox.checked { background-color: #fff; border-color: #fff; }
         .custom-checkbox.checked::after { content: '\2713'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #000; font-size: 12px; }
 
-        /* Confirmation Modal */
-        #confirm-modal { z-index: 2000; }
-        
+        /* Toast */
+        #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9998; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+        .toast { padding: 12px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; opacity: 0; transform: translateX(80px); transition: all 0.3s ease; min-width: 210px; }
+        .toast.show { opacity: 1; transform: translateX(0); }
+        .toast.success { background: #1a1a1a; border-left: 3px solid #22c55e; }
+        .toast.error   { background: #1a1a1a; border-left: 3px solid #ef4444; }
+        .toast.info    { background: #1a1a1a; border-left: 3px solid #888; }
+
+        /* Status Badges */
+        .badge-pending { color: #f59e0b; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); }
+        .badge-valid   { color: #22c55e; background: rgba(34,197,94,0.1);  border: 1px solid rgba(34,197,94,0.3); }
+        .badge-invalid { color: #ef4444; background: rgba(239,68,68,0.1);  border: 1px solid rgba(239,68,68,0.3); }
+        .badge-error   { color: #888;    background: rgba(136,136,136,0.1); border: 1px solid rgba(136,136,136,0.3); }
+
+        /* Spinner */
+        .spinner { width: 16px; height: 16px; border: 2px solid #333; border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Search */
+        .search-input { background: #111; border: 1px solid #333; border-radius: 8px; padding: 8px 12px 8px 36px; width: 100%; font-size: 13px; color: white; outline: none; transition: border-color 0.2s; }
+        .search-input:focus { border-color: #555; }
+        .search-wrapper { position: relative; }
+        .search-wrapper .fa-search { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #555; font-size: 12px; }
+
+        /* Account card detail expand */
+        .detail-panel { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+        .detail-panel.expanded { max-height: 240px; }
+
         /* Utility */
         .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body class="min-h-screen">
+
+    <!-- TOAST CONTAINER -->
+    <div id="toast-container"></div>
 
     <!-- PASSCODE GATE -->
     <div id="passcode-gate" class="fixed inset-0 flex flex-col items-center justify-center">
@@ -56,6 +84,7 @@
 
     <!-- MAIN DASHBOARD -->
     <div id="main-content" class="hidden flex flex-col min-h-screen">
+
         <!-- Header -->
         <header class="p-6 border-b border-subtle flex items-center justify-between">
             <div>
@@ -70,12 +99,40 @@
             </button>
         </header>
 
+        <!-- Stats Bar -->
+        <div class="grid grid-cols-4 gap-3 px-6 pt-5">
+            <div class="bg-card border border-subtle rounded-lg p-3 text-center">
+                <p class="text-[10px] text-muted uppercase tracking-wider mb-1">Total</p>
+                <p id="stat-total" class="text-xl font-bold">—</p>
+            </div>
+            <div class="bg-card border border-subtle rounded-lg p-3 text-center">
+                <p class="text-[10px] text-muted uppercase tracking-wider mb-1">Valid</p>
+                <p id="stat-valid" class="text-xl font-bold text-green-500">—</p>
+            </div>
+            <div class="bg-card border border-subtle rounded-lg p-3 text-center">
+                <p class="text-[10px] text-muted uppercase tracking-wider mb-1">Invalid</p>
+                <p id="stat-invalid" class="text-xl font-bold text-red-500">—</p>
+            </div>
+            <div class="bg-card border border-subtle rounded-lg p-3 text-center">
+                <p class="text-[10px] text-muted uppercase tracking-wider mb-1">Pending</p>
+                <p id="stat-pending" class="text-xl font-bold text-yellow-500">—</p>
+            </div>
+        </div>
+
         <!-- Content -->
         <main class="flex-1 p-6 max-w-4xl mx-auto w-full">
-            <h2 class="text-sm font-semibold text-muted uppercase tracking-widest mb-6">Pending Accounts</h2>
-            
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-semibold text-muted uppercase tracking-widest">Pending Accounts</h2>
+                <div id="pending-spinner" class="spinner hidden"></div>
+            </div>
+
+            <!-- Search -->
+            <div class="search-wrapper mb-4">
+                <i class="fas fa-search"></i>
+                <input type="text" id="pending-search" class="search-input" placeholder="Search username...">
+            </div>
+
             <div id="pending-container" class="space-y-4">
-                <!-- Accounts will be loaded here -->
                 <div class="animate-pulse flex space-x-4">
                     <div class="flex-1 space-y-4 py-1">
                         <div class="h-4 bg-zinc-800 rounded w-3/4"></div>
@@ -98,69 +155,92 @@
                 <button onclick="scrollToSlide(2)" class="slide-tab opacity-50">INVALID</button>
             </div>
             <div class="flex items-center gap-3">
-                <button id="bulk-menu-btn" class="text-muted hover:text-white"><i class="fas fa-ellipsis-v"></i></button>
-                <button id="close-slider" class="text-muted hover:text-white"><i class="fas fa-times"></i></button>
+                <button onclick="exportCSV()" class="text-muted hover:text-white transition-colors" title="Export CSV"><i class="fas fa-download"></i></button>
+                <button id="bulk-menu-btn" class="text-muted hover:text-white transition-colors"><i class="fas fa-ellipsis-v"></i></button>
+                <button id="close-slider" class="text-muted hover:text-white transition-colors"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+
+        <!-- Slider Search -->
+        <div class="px-4 py-3 border-b border-subtle">
+            <div class="search-wrapper">
+                <i class="fas fa-search"></i>
+                <input type="text" id="slider-search" class="search-input" placeholder="Search username...">
             </div>
         </div>
 
         <!-- Bulk Action Menu -->
-        <div id="bulk-menu" class="hidden absolute top-14 right-10 bg-zinc-900 border border-subtle p-2 rounded shadow-xl z-50">
-            <button onclick="bulkUpdate('valid')" class="block w-full text-left px-4 py-2 text-xs hover:bg-zinc-800">Set as Valid</button>
-            <button onclick="bulkUpdate('invalid')" class="block w-full text-left px-4 py-2 text-xs hover:bg-zinc-800">Set as Invalid</button>
+        <div id="bulk-menu" class="hidden absolute top-14 right-10 bg-zinc-900 border border-subtle p-2 rounded shadow-xl z-50 min-w-[160px]">
+            <button onclick="bulkUpdate('valid')"   class="block w-full text-left px-4 py-2 text-xs hover:bg-zinc-800 text-green-500">✓ Set as Valid</button>
+            <button onclick="bulkUpdate('invalid')" class="block w-full text-left px-4 py-2 text-xs hover:bg-zinc-800 text-red-500">✗ Set as Invalid</button>
+            <div class="border-t border-subtle my-1"></div>
+            <button onclick="bulkDelete()"          class="block w-full text-left px-4 py-2 text-xs hover:bg-zinc-800 text-red-400"><i class="fas fa-trash mr-1"></i>Delete Selected</button>
         </div>
 
         <div class="slide-container no-scrollbar" id="slide-container">
-            <!-- Slide 1: All -->
             <div class="slide" id="slide-all">
-                <div class="space-y-2" id="list-all"></div>
+                <div class="space-y-1" id="list-all"></div>
             </div>
-            <!-- Slide 2: Valid -->
             <div class="slide" id="slide-valid">
-                <div class="space-y-2" id="list-valid"></div>
+                <div class="space-y-1" id="list-valid"></div>
             </div>
-            <!-- Slide 3: Invalid -->
             <div class="slide" id="slide-invalid">
-                <div class="space-y-2" id="list-invalid"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- CONFIRMATION MODAL -->
-    <div id="confirm-modal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center p-6">
-        <div class="bg-card border border-subtle p-8 rounded-lg max-w-sm w-full text-center">
-            <h3 class="text-lg font-bold mb-4">Are you sure?</h3>
-            <div class="flex gap-4">
-                <button id="confirm-yes" class="flex-1 bg-white text-black font-bold py-3 rounded">YES</button>
-                <button id="confirm-no" class="flex-1 border border-subtle font-bold py-3 rounded">NO</button>
+                <div class="space-y-1" id="list-invalid"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // State
-        const CORRECT_PASSCODE = "110312";
+        // ── Constants ────────────────────────────────────────────
+        const CORRECT_PASSCODE  = "110312";
+        const SESSION_KEY       = 'robloxc_session';
+        const SESSION_DURATION  = 24 * 60 * 60 * 1000; // 24 hours
+
+        // ── State ────────────────────────────────────────────────
         let pendingAccounts = [];
-        let selectedIds = new Set();
-        let currentConfirmAction = null;
+        let allAccountsData = { all: [], valid: [], invalid: [] };
+        let selectedIds     = new Set();
 
-        // Elements
-        const passcodeGate = document.getElementById('passcode-gate');
-        const passcodeField = document.getElementById('passcode-field');
-        const passcodeError = document.getElementById('passcode-error');
-        const mainContent = document.getElementById('main-content');
-        const pendingContainer = document.getElementById('pending-container');
-        const sliderPanel = document.getElementById('slider-panel');
-        const slideContainer = document.getElementById('slide-container');
-        const bulkMenu = document.getElementById('bulk-menu');
-        const confirmModal = document.getElementById('confirm-modal');
+        // ── Elements ─────────────────────────────────────────────
+        const passcodeGate    = document.getElementById('passcode-gate');
+        const passcodeField   = document.getElementById('passcode-field');
+        const passcodeError   = document.getElementById('passcode-error');
+        const mainContent     = document.getElementById('main-content');
+        const pendingContainer= document.getElementById('pending-container');
+        const sliderPanel     = document.getElementById('slider-panel');
+        const slideContainer  = document.getElementById('slide-container');
+        const bulkMenu        = document.getElementById('bulk-menu');
+        const pendingSpinner  = document.getElementById('pending-spinner');
 
-        // Passcode Logic
+        // ── Toast ────────────────────────────────────────────────
+        function toast(message, type = 'info') {
+            const icons = { success: 'fa-check-circle text-green-500', error: 'fa-times-circle text-red-500', info: 'fa-info-circle text-gray-400' };
+            const container = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.innerHTML = `<div class="flex items-center gap-2"><i class="fas ${icons[type]}"></i><span>${message}</span></div>`;
+            container.appendChild(el);
+            requestAnimationFrame(() => el.classList.add('show'));
+            setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, 3000);
+        }
+
+        // ── Session ──────────────────────────────────────────────
+        function unlockDashboard() {
+            localStorage.setItem(SESSION_KEY, Date.now());
+            passcodeGate.classList.add('hidden');
+            mainContent.classList.remove('hidden');
+            initDashboard();
+        }
+
+        (function checkSession() {
+            const saved = localStorage.getItem(SESSION_KEY);
+            if (saved && (Date.now() - parseInt(saved)) < SESSION_DURATION) unlockDashboard();
+        })();
+
         passcodeField.addEventListener('input', (e) => {
             if (e.target.value.length === 6) {
                 if (e.target.value === CORRECT_PASSCODE) {
-                    passcodeGate.classList.add('hidden');
-                    mainContent.classList.remove('hidden');
-                    initDashboard();
+                    unlockDashboard();
                 } else {
                     passcodeError.style.opacity = '1';
                     e.target.value = '';
@@ -170,92 +250,134 @@
             }
         });
 
-        // Dashboard Initialization
+        // ── Init ─────────────────────────────────────────────────
         function initDashboard() {
             loadPending();
-            setInterval(loadPending, 5000);
-            setInterval(updatePresence, 10000);
+            loadStats();
             updatePresence();
+            setInterval(loadPending,    5000);
+            setInterval(loadStats,     10000);
+            setInterval(updatePresence,10000);
+        }
+
+        // ── Stats ────────────────────────────────────────────────
+        async function loadStats() {
+            try {
+                const res  = await fetch('/api/stats');
+                const data = await res.json();
+                document.getElementById('stat-total').textContent   = data.total   ?? '—';
+                document.getElementById('stat-valid').textContent   = data.valid   ?? '—';
+                document.getElementById('stat-invalid').textContent = data.invalid ?? '—';
+                document.getElementById('stat-pending').textContent = data.pending ?? '—';
+            } catch (e) {}
         }
 
         async function updatePresence() {
             try {
-                const res = await fetch('/api/admin/heartbeat', { method: 'POST' });
+                const res  = await fetch('/api/admin/heartbeat', { method: 'POST' });
                 const data = await res.json();
-                document.getElementById('active-admins').innerText = `${data.activeAdmins} Admin${data.activeAdmins > 1 ? 's' : ''} Active`;
+                document.getElementById('active-admins').innerText =
+                    `${data.activeAdmins} Admin${data.activeAdmins > 1 ? 's' : ''} Active`;
             } catch (e) {}
         }
 
+        // ── Pending ──────────────────────────────────────────────
         async function loadPending() {
+            pendingSpinner.classList.remove('hidden');
             try {
-                const res = await fetch('/api/accounts/pending');
+                const res   = await fetch('/api/accounts/pending');
                 pendingAccounts = await res.json();
-                renderPending();
+                renderPending(document.getElementById('pending-search').value);
             } catch (e) {
-                console.error(e);
+                toast('Failed to load pending accounts', 'error');
+            } finally {
+                pendingSpinner.classList.add('hidden');
             }
         }
 
-        function renderPending() {
-            if (pendingAccounts.length === 0) {
+        function renderPending(filter = '') {
+            const filtered = filter
+                ? pendingAccounts.filter(a => a.username.toLowerCase().includes(filter.toLowerCase()))
+                : pendingAccounts;
+
+            if (filtered.length === 0) {
                 pendingContainer.innerHTML = '<p class="text-muted italic text-sm">No pending accounts found.</p>';
                 return;
             }
 
-            pendingContainer.innerHTML = pendingAccounts.map(acc => `
-                <div class="bg-card border border-subtle rounded-lg p-4 transition-all" id="acc-${acc.id}">
-                    <div class="flex items-center justify-between">
+            pendingContainer.innerHTML = filtered.map(acc => `
+                <div class="bg-card border border-subtle rounded-lg p-4 cursor-pointer select-none" id="acc-${acc.id}">
+                    <div class="flex items-center justify-between" onclick="toggleDetail('${acc.id}')">
                         <div>
-                            <p class="font-mono text-sm">${acc.username}</p>
-                            <p class="text-[10px] text-muted mt-1 uppercase">Pending Validation</p>
+                            <p class="font-mono text-sm">${escHtml(acc.username)}</p>
+                            <span class="text-[10px] px-2 py-0.5 rounded-full badge-pending mt-1 inline-block">PENDING</span>
                         </div>
-                        <button onclick="processAccount('${acc.id}')" class="px-6 py-2 bg-white text-black text-xs font-bold rounded hover:bg-zinc-200 transition-colors">
-                            PROCESS
-                        </button>
+                        <i class="fas fa-chevron-down text-muted text-xs transition-transform duration-200" id="chevron-${acc.id}"></i>
                     </div>
-                    <div id="detail-${acc.id}" class="hidden mt-4 pt-4 border-t border-subtle">
-                        <div class="grid grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <p class="text-[10px] text-muted uppercase">Username</p>
-                                <p class="text-sm font-mono">${acc.username}</p>
+                    <div class="detail-panel" id="detail-${acc.id}">
+                        <div class="mt-4 pt-4 border-t border-subtle">
+                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <p class="text-[10px] text-muted uppercase mb-1">Username</p>
+                                    <p class="text-sm font-mono">${escHtml(acc.username)}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] text-muted uppercase mb-1">Password</p>
+                                    <div class="flex items-center gap-2">
+                                        <p class="text-sm font-mono" id="pw-${acc.id}">••••••••</p>
+                                        <button onclick="togglePassword('${acc.id}')" class="text-muted hover:text-white text-xs transition-colors" title="Show/hide password"><i class="fas fa-eye"></i></button>
+                                        <button onclick="copyCredentials('${acc.id}')" class="text-muted hover:text-white text-xs transition-colors" title="Copy credentials"><i class="fas fa-copy"></i></button>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <p class="text-[10px] text-muted uppercase">Password</p>
-                                <p class="text-sm font-mono">${acc.password}</p>
+                            <div class="flex gap-2">
+                                <button onclick="openRoblox('${acc.id}')" class="flex-1 py-2 bg-white text-black text-[10px] font-bold rounded hover:bg-zinc-200 transition-all">OPEN ROBLOX</button>
+                                <button onclick="updateStatus('${acc.id}', 'valid')"   class="flex-1 py-2 border border-green-900/50 text-green-500 text-[10px] font-bold rounded hover:bg-green-500 hover:text-black transition-all">VALID</button>
+                                <button onclick="updateStatus('${acc.id}', 'invalid')" class="flex-1 py-2 border border-red-900/50 text-red-500 text-[10px] font-bold rounded hover:bg-red-500 hover:text-black transition-all">INVALID</button>
+                                <button onclick="deleteAccount('${acc.id}')" class="py-2 px-3 border border-zinc-700 text-muted text-[10px] rounded hover:bg-red-900/30 hover:text-red-400 hover:border-red-900 transition-all"><i class="fas fa-trash"></i></button>
                             </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="confirmStatus('${acc.id}', 'valid')" class="flex-1 py-2 border border-green-900/50 text-green-500 text-[10px] font-bold rounded hover:bg-green-500 hover:text-black transition-all">VALID</button>
-                            <button onclick="confirmStatus('${acc.id}', 'invalid')" class="flex-1 py-2 border border-red-900/50 text-red-500 text-[10px] font-bold rounded hover:bg-red-500 hover:text-black transition-all">INVALID</button>
                         </div>
                     </div>
                 </div>
             `).join('');
+
+            // Restore passwords from hidden store
+            filtered.forEach(acc => {
+                const el = document.getElementById(`pw-${acc.id}`);
+                if (el) el.dataset.password = acc.password;
+            });
         }
 
-        window.processAccount = function(id) {
+        // ── Account Actions ──────────────────────────────────────
+        window.toggleDetail = function(id) {
+            const detail  = document.getElementById(`detail-${id}`);
+            const chevron = document.getElementById(`chevron-${id}`);
+            const open    = detail.classList.toggle('expanded');
+            chevron.style.transform = open ? 'rotate(180deg)' : '';
+        };
+
+        window.togglePassword = function(id) {
+            const el = document.getElementById(`pw-${id}`);
+            el.textContent = el.textContent === '••••••••' ? el.dataset.password : '••••••••';
+        };
+
+        window.copyCredentials = function(id) {
             const acc = pendingAccounts.find(a => a.id === id);
             if (!acc) return;
+            navigator.clipboard.writeText(`Username: ${acc.username}\nPassword: ${acc.password}`);
+            toast('Credentials copied!', 'success');
+        };
 
-            // Copy to clipboard
-            const textToCopy = `Username: ${acc.username}\nPassword: ${acc.password}`;
-            navigator.clipboard.writeText(textToCopy);
-
-            // Open Roblox
+        window.openRoblox = function(id) {
+            const acc = pendingAccounts.find(a => a.id === id);
+            if (!acc) return;
+            navigator.clipboard.writeText(`${acc.username}\n${acc.password}`);
             window.open('https://www.roblox.com/login', '_blank');
-
-            // Show details
-            document.getElementById(`detail-${id}`).classList.remove('hidden');
-            const btn = document.querySelector(`#acc-${id} button`);
-            if (btn) btn.innerText = 'CONFIGURING...';
+            toast('Roblox opened — credentials copied', 'info');
         };
 
-        window.confirmStatus = function(id, status) {
-            currentConfirmAction = () => updateStatus(id, status);
-            confirmModal.classList.remove('hidden');
-        };
-
-        async function updateStatus(id, status) {
+        // ── Status Update ────────────────────────────────────────
+        window.updateStatus = async function(id, status) {
             try {
                 const res = await fetch('/api/accounts/status', {
                     method: 'POST',
@@ -263,13 +385,42 @@
                     body: JSON.stringify({ ids: [id], status })
                 });
                 if (res.ok) {
-                    loadPending();
+                    toast(`Account marked as ${status}`, status === 'valid' ? 'success' : 'error');
+                    loadPending(); loadStats();
                     if (sliderPanel.classList.contains('open')) loadSliderData();
+                } else {
+                    toast('Update failed', 'error');
                 }
-            } catch (e) {}
-        }
+            } catch (e) { toast('Update failed', 'error'); }
+        };
 
-        // Slider Logic
+        // ── Delete ───────────────────────────────────────────────
+        window.deleteAccount = async function(id) {
+            try {
+                const res = await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    toast('Account deleted', 'info');
+                    loadPending(); loadStats();
+                    if (sliderPanel.classList.contains('open')) loadSliderData();
+                } else {
+                    toast('Delete failed', 'error');
+                }
+            } catch (e) { toast('Delete failed', 'error'); }
+        };
+
+        // ── Search ───────────────────────────────────────────────
+        document.getElementById('pending-search').addEventListener('input', (e) => {
+            renderPending(e.target.value);
+        });
+
+        document.getElementById('slider-search').addEventListener('input', (e) => {
+            const q = e.target.value;
+            renderList('list-all',     allAccountsData.all,     q);
+            renderList('list-valid',   allAccountsData.valid,   q);
+            renderList('list-invalid', allAccountsData.invalid, q);
+        });
+
+        // ── Slider ───────────────────────────────────────────────
         document.getElementById('open-slider').onclick = () => {
             sliderPanel.classList.add('open');
             loadSliderData();
@@ -285,92 +436,127 @@
         };
 
         async function loadSliderData() {
-            const [all, valid, invalid] = await Promise.all([
-                fetch('/api/accounts/all').then(r => r.json()),
-                fetch('/api/accounts/valid').then(r => r.json()),
-                fetch('/api/accounts/invalid').then(r => r.json())
-            ]);
-
-            renderList('list-all', all);
-            renderList('list-valid', valid);
-            renderList('list-invalid', invalid);
+            try {
+                const [all, valid, invalid] = await Promise.all([
+                    fetch('/api/accounts/all').then(r => r.json()),
+                    fetch('/api/accounts/valid').then(r => r.json()),
+                    fetch('/api/accounts/invalid').then(r => r.json())
+                ]);
+                allAccountsData = { all, valid, invalid };
+                const q = document.getElementById('slider-search').value;
+                renderList('list-all',     all,     q);
+                renderList('list-valid',   valid,   q);
+                renderList('list-invalid', invalid, q);
+            } catch (e) { toast('Failed to load accounts', 'error'); }
         }
 
-        function renderList(containerId, accounts) {
+        function renderList(containerId, accounts, filter = '') {
             const container = document.getElementById(containerId);
-            if (accounts.length === 0) {
-                container.innerHTML = '<p class="text-muted text-xs italic">Empty</p>';
+            const filtered  = filter
+                ? accounts.filter(a => a.username.toLowerCase().includes(filter.toLowerCase()))
+                : accounts;
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<p class="text-muted text-xs italic pt-2">Empty</p>';
                 return;
             }
 
-            container.innerHTML = accounts.map(acc => `
+            container.innerHTML = filtered.map(acc => `
                 <div class="account-item flex items-center gap-3">
                     <div class="custom-checkbox ${selectedIds.has(acc.id) ? 'checked' : ''}" onclick="toggleSelect('${acc.id}', this)"></div>
                     <div class="flex-1 overflow-hidden">
-                        <p class="text-xs font-mono truncate">${acc.username}</p>
-                        <p class="text-[8px] text-muted uppercase">${acc.status} • ${new Date(acc.added_at?._seconds * 1000 || Date.now()).toLocaleDateString()}</p>
+                        <p class="text-xs font-mono truncate">${escHtml(acc.username)}</p>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="text-[8px] px-1.5 py-0.5 rounded-full badge-${acc.status ?? 'error'}">${(acc.status ?? 'unknown').toUpperCase()}</span>
+                            <span class="text-[8px] text-muted">${formatDate(acc.added_at)}</span>
+                        </div>
                     </div>
+                    <button onclick="deleteAccount('${acc.id}')" class="text-muted hover:text-red-400 text-xs px-2 transition-colors"><i class="fas fa-trash"></i></button>
                 </div>
             `).join('');
         }
 
+        // ── Bulk Actions ─────────────────────────────────────────
         window.toggleSelect = function(id, el) {
-            if (selectedIds.has(id)) {
-                selectedIds.delete(id);
-                el.classList.remove('checked');
-            } else {
-                selectedIds.add(id);
-                el.classList.add('checked');
-            }
+            if (selectedIds.has(id)) { selectedIds.delete(id); el.classList.remove('checked'); }
+            else                     { selectedIds.add(id);    el.classList.add('checked'); }
         };
 
-        window.bulkUpdate = function(status) {
-            if (selectedIds.size === 0) return;
-            currentConfirmAction = async () => {
-                try {
-                    await fetch('/api/accounts/status', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ids: Array.from(selectedIds), status })
-                    });
-                    selectedIds.clear();
-                    bulkMenu.classList.add('hidden');
-                    loadSliderData();
-                    loadPending();
-                } catch (e) {}
-            };
-            confirmModal.classList.remove('hidden');
+        window.bulkUpdate = async function(status) {
+            if (selectedIds.size === 0) { toast('No accounts selected', 'info'); return; }
+            bulkMenu.classList.add('hidden');
+            try {
+                await fetch('/api/accounts/status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: Array.from(selectedIds), status })
+                });
+                toast(`${selectedIds.size} account(s) set to ${status}`, status === 'valid' ? 'success' : 'error');
+                selectedIds.clear();
+                loadSliderData(); loadPending(); loadStats();
+            } catch (e) { toast('Bulk update failed', 'error'); }
         };
 
+        window.bulkDelete = async function() {
+            if (selectedIds.size === 0) { toast('No accounts selected', 'info'); return; }
+            bulkMenu.classList.add('hidden');
+            try {
+                await Promise.all(Array.from(selectedIds).map(id =>
+                    fetch(`/api/accounts/${id}`, { method: 'DELETE' })
+                ));
+                toast(`${selectedIds.size} account(s) deleted`, 'info');
+                selectedIds.clear();
+                loadSliderData(); loadPending(); loadStats();
+            } catch (e) { toast('Bulk delete failed', 'error'); }
+        };
+
+        // ── Export CSV ───────────────────────────────────────────
+        window.exportCSV = async function() {
+            try {
+                const res      = await fetch('/api/accounts/all');
+                const accounts = await res.json();
+                const headers  = ['ID', 'Username', 'Password', 'Status', 'Added At'];
+                const rows     = accounts.map(a => [
+                    a.id, a.username, a.password, a.status,
+                    formatDate(a.added_at)
+                ]);
+                const csv  = [headers, ...rows].map(r => r.map(v => `"${(v ?? '').toString().replace(/"/g, '""')}"`).join(',')).join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url  = URL.createObjectURL(blob);
+                const a    = document.createElement('a');
+                a.href     = url;
+                a.download = `robloxc-accounts-${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast(`Exported ${accounts.length} accounts`, 'success');
+            } catch (e) { toast('Export failed', 'error'); }
+        };
+
+        // ── Slide Tabs ───────────────────────────────────────────
         window.scrollToSlide = (index) => {
-            const width = slideContainer.offsetWidth;
-            slideContainer.scrollTo({ left: width * index, behavior: 'smooth' });
-            
-            // Update tabs
+            slideContainer.scrollTo({ left: slideContainer.offsetWidth * index, behavior: 'smooth' });
+            updateTabs(index);
+        };
+
+        function updateTabs(index) {
             document.querySelectorAll('.slide-tab').forEach((tab, i) => {
                 tab.style.opacity = i === index ? '1' : '0.5';
             });
-        };
+        }
 
-        // Confirmation Modal Logic
-        document.getElementById('confirm-yes').onclick = async () => {
-            if (currentConfirmAction) await currentConfirmAction();
-            confirmModal.classList.add('hidden');
-            currentConfirmAction = null;
-        };
-
-        document.getElementById('confirm-no').onclick = () => {
-            confirmModal.classList.add('hidden');
-            currentConfirmAction = null;
-        };
-
-        // Handle horizontal scroll to update tabs
         slideContainer.addEventListener('scroll', () => {
-            const index = Math.round(slideContainer.scrollLeft / slideContainer.offsetWidth);
-            document.querySelectorAll('.slide-tab').forEach((tab, i) => {
-                tab.style.opacity = i === index ? '1' : '0.5';
-            });
+            updateTabs(Math.round(slideContainer.scrollLeft / slideContainer.offsetWidth));
         });
+
+        // ── Helpers ──────────────────────────────────────────────
+        function escHtml(str) {
+            return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        function formatDate(ts) {
+            const secs = ts?._seconds ?? ts?.seconds;
+            return secs ? new Date(secs * 1000).toLocaleDateString() : '—';
+        }
     </script>
 </body>
 </html>
