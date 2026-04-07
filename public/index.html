@@ -87,12 +87,18 @@
 
         <!-- Header -->
         <header class="p-6 border-b border-subtle flex items-center justify-between">
-            <div>
-                <h1 class="text-lg font-bold">ROBLOXC ADMIN</h1>
-                <div class="flex items-center gap-2 mt-1">
-                    <span class="w-2 h-2 bg-green-500 rounded-full"></span>
-                    <span id="active-admins" class="text-xs text-muted">1 Admin Active</span>
+            <div class="flex items-center gap-6">
+                <div>
+                    <h1 class="text-lg font-bold">ROBLOXC ADMIN</h1>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                        <span id="active-admins" class="text-xs text-muted">1 Admin Active</span>
+                    </div>
                 </div>
+                <nav class="hidden md:flex items-center gap-4">
+                    <a href="/dashboard" class="text-xs font-bold border-b-2 border-white pb-1">DASHBOARD</a>
+                    <a href="/email" class="text-xs font-bold text-muted hover:text-white transition-colors pb-1">EMAIL SERVICE</a>
+                </nav>
             </div>
             <button id="open-slider" class="w-10 h-10 flex items-center justify-center rounded-full border border-subtle hover:bg-white hover:text-black transition-all">
                 <i class="fas fa-chevron-right"></i>

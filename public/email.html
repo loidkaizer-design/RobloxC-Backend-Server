@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RobloxC | Email Service</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #000000; 
+            color: #ffffff; 
+            overflow: hidden; /* Prevent normal scrolling */
+        }
+        
+        .bg-card { background-color: #1a1a1a; }
+        .border-subtle { border-color: #333333; }
+        .text-muted { color: #888888; }
+
+        /* Slider Animation Styles */
+        #slider-overlay {
+            position: fixed;
+            top: -100%;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 50;
+            transition: top 0.8s cubic-bezier(0.85, 0, 0.15, 1);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #slider-overlay.active {
+            top: 0;
+        }
+
+        .scroll-hint {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 60;
+            animation: bounce 2s infinite;
+            cursor: pointer;
+        }
+
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {transform: translateY(0) translateX(-50%);}
+            40% {transform: translateY(-10px) translateX(-50%);}
+            60% {transform: translateY(-5px) translateX(-50%);}
+        }
+
+        /* Log Panel Styles */
+        #log-container {
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 12px;
+            background: #0a0a0a;
+            border: 1px solid #222;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+            border-left: 2px solid #444;
+            padding-left: 8px;
+        }
+
+        .log-time { color: #555; margin-right: 8px; }
+        .log-info { color: #3b82f6; }
+        .log-success { color: #22c55e; }
+        .log-error { color: #ef4444; }
+
+        /* Form Styles */
+        .input-field {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 12px;
+            width: 100%;
+            color: white;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-field:focus { border-color: #555; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #000; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center">
+
+    <!-- SCROLL HINT -->
+    <div class="scroll-hint text-muted flex flex-col items-center" id="scroll-trigger">
+        <span class="text-[10px] uppercase tracking-widest mb-2">Scroll Up to Start</span>
+        <i class="fas fa-chevron-up"></i>
+    </div>
+
+    <!-- MAIN LANDING (VISIBLE FIRST) -->
+    <div id="landing" class="text-center px-6">
+        <h1 class="text-4xl font-bold mb-4 tracking-tighter">EMAIL SERVICE</h1>
+        <p class="text-muted max-w-md mx-auto">Connect and automate your notifications via EmailJS. Scroll up to access the configuration panel.</p>
+    </div>
+
+    <!-- SLIDER OVERLAY (ANIMATES FROM TOP) -->
+    <div id="slider-overlay">
+        <div class="w-full max-w-5xl px-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            <!-- FORM SECTION -->
+            <div class="bg-card border border-subtle rounded-xl p-8 shadow-2xl">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="w-10 h-10 bg-white text-black rounded-full flex items-center justify-center">
+                        <i class="fas fa-paper-plane"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Send Template</h2>
+                        <p class="text-xs text-muted">Integration via EmailJS</p>
+                    </div>
+                </div>
+
+                <form id="email-form" class="space-y-4">
+                    <div>
+                        <label class="text-[10px] text-muted uppercase font-bold mb-2 block">Gmail Account</label>
+                        <input type="email" id="target-email" class="input-field" placeholder="recipient@gmail.com" required>
+                    </div>
+                    
+                    <button type="submit" id="submit-btn" class="w-full py-4 bg-white text-black font-bold rounded-lg hover:bg-zinc-200 transition-all flex items-center justify-center gap-2">
+                        <span>SEND TEMPLATE</span>
+                        <i class="fas fa-arrow-right text-xs"></i>
+                    </button>
+                </form>
+                
+                <div class="mt-6 pt-6 border-t border-subtle flex justify-between items-center">
+                    <button onclick="toggleSlider()" class="text-xs text-muted hover:text-white transition-colors">
+                        <i class="fas fa-times mr-1"></i> Close Panel
+                    </button>
+                    <span class="text-[10px] text-zinc-600 font-mono">SERVICE_FN2P5OF</span>
+                </div>
+            </div>
+
+            <!-- LOGS SECTION -->
+            <div class="flex flex-col">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xs font-bold uppercase tracking-widest text-muted">Live Logs</h3>
+                    <button onclick="clearLogs()" class="text-[10px] text-zinc-500 hover:text-white transition-colors">CLEAR</button>
+                </div>
+                <div id="log-container">
+                    <!-- Logs will appear here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize EmailJS
+        (function() {
+            emailjs.init("YOUR_PUBLIC_KEY"); // User should replace this or we can leave it for them
+        })();
+
+        const slider = document.getElementById('slider-overlay');
+        const scrollTrigger = document.getElementById('scroll-trigger');
+        const logContainer = document.getElementById('log-container');
+        const emailForm = document.getElementById('email-form');
+        
+        let isSliderOpen = false;
+
+        // --- Slider Logic ---
+        function toggleSlider() {
+            isSliderOpen = !isSliderOpen;
+            if (isSliderOpen) {
+                slider.classList.add('active');
+                scrollTrigger.style.display = 'none';
+                addLog('System', 'Configuration panel opened', 'info');
+            } else {
+                slider.classList.remove('active');
+                scrollTrigger.style.display = 'flex';
+            }
+        }
+
+        // Handle Scroll Up
+        window.addEventListener('wheel', (e) => {
+            if (e.deltaY < -30 && !isSliderOpen) {
+                toggleSlider();
+            }
+        });
+
+        // Touch support for mobile
+        let touchStartY = 0;
+        window.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; });
+        window.addEventListener('touchend', (e) => {
+            const touchEndY = e.changedTouches[0].clientY;
+            if (touchEndY - touchStartY > 50 && !isSliderOpen) {
+                toggleSlider();
+            }
+        });
+
+        scrollTrigger.onclick = toggleSlider;
+
+        // --- Log Logic ---
+        function addLog(source, message, type = 'info') {
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
+                           now.getMinutes().toString().padStart(2, '0') + ':' + 
+                           now.getSeconds().toString().padStart(2, '0');
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `
+                <span class="log-time">[${timeStr}]</span>
+                <span class="log-${type}">[${source.toUpperCase()}]</span>
+                <span class="log-msg">${message}</span>
+            `;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function clearLogs() {
+            logContainer.innerHTML = '';
+            addLog('System', 'Logs cleared', 'info');
+        }
+
+        // Initial Log
+        addLog('System', 'Email service initialized', 'success');
+
+        // --- Form Logic ---
+        emailForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('target-email').value;
+            const btn = document.getElementById('submit-btn');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> SENDING...';
+            
+            addLog('EmailJS', `Attempting to send template to ${email}...`, 'info');
+
+            try {
+                // The exact call requested by user
+                const response = await emailjs.send("service_fn2p5of", "template_8g6fwoc", {
+                    Email: email,
+                });
+
+                addLog('EmailJS', `Successfully sent to ${email} (ID: ${response.status})`, 'success');
+                alert('Email sent successfully!');
+            } catch (error) {
+                addLog('EmailJS', `Failed to send: ${error.text || error.message || error}`, 'error');
+                alert('Failed to send email. Check logs for details.');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span>SEND TEMPLATE</span><i class="fas fa-arrow-right text-xs"></i>';
+            }
+        };
+    </script>
+</body>
+</html>
